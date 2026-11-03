@@ -1,0 +1,591 @@
+<title>DialUp AI</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  /* layout: chat column, sticky header, sticky composer, status band under header */
+  :root {
+    --bg: #0e1116;
+    --surface: #171b22;
+    --surface_raised: #1f242d;
+    --border: #262c37;
+    --fg: #e8ecf2;
+    --muted: #8691a3;
+    --accent: #f0b429;
+    --accent_dim: #7a5a12;
+    --user_bubble: #2a3140;
+    --bot_bubble: #1a1f28;
+    --danger: #e8614a;
+    --ok: #67c08a;
+    --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+    --sans: 'IBM Plex Sans', system-ui, sans-serif;
+    color-scheme: dark;
+  }
+  :root[data-theme="light"] {
+    --bg: #f3eee4;
+    --surface: #ffffff;
+    --surface_raised: #faf6ec;
+    --border: #e2dccc;
+    --fg: #1b1a16;
+    --muted: #67604f;
+    --accent: #a9710a;
+    --accent_dim: #d9bf7a;
+    --user_bubble: #ece5d2;
+    --bot_bubble: #ffffff;
+    --danger: #b03a24;
+    --ok: #2e7a4f;
+    color-scheme: light;
+  }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--sans);
+    display: flex;
+    flex-direction: column;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0 0 auto;
+    height: env(safe-area-inset-top, 0px);
+    background: var(--bg);
+    z-index: 20;
+  }
+
+  header {
+    position: sticky;
+    top: env(safe-area-inset-top, 0px);
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    padding-block: 14px 10px;
+    z-index: 10;
+  }
+  .brand {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    font-family: var(--mono);
+  }
+  .brand_mark {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+    display: inline-block;
+    animation: pulse 1.8s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 1; }
+  }
+  .brand h1 {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 0;
+  }
+  .brand .version {
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .uptime {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    margin-top: 8px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .uptime_right { color: var(--danger); }
+
+  main {
+    flex: 1;
+    overflow-y: auto;
+    padding-block: 20px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    min-width: 0;
+  }
+
+  .intro {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: 10px;
+    padding: 18px 20px;
+    max-width: 560px;
+    align-self: center;
+    width: 100%;
+    min-width: 0;
+  }
+  .intro h2 {
+    margin: 0 0 6px;
+    font-size: 20px;
+    font-weight: 600;
+    text-wrap: balance;
+  }
+  .intro p {
+    margin: 0;
+    color: var(--muted);
+    line-height: 1.55;
+    font-size: 14px;
+  }
+  .intro .meta {
+    margin-top: 12px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .intro .meta b {
+    color: var(--fg);
+    font-weight: 500;
+  }
+
+  .msg {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-width: 680px;
+    width: 100%;
+    align-self: center;
+    min-width: 0;
+  }
+  .msg_label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .msg_body {
+    background: var(--bot_bubble);
+    border: 1px solid var(--border);
+    padding: 12px 16px;
+    border-radius: 10px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-size: 15px;
+  }
+  .msg.user .msg_body {
+    background: var(--user_bubble);
+    border-color: transparent;
+  }
+  .msg.user {
+    align-items: flex-end;
+  }
+  .msg.user .msg_body {
+    max-width: 85%;
+  }
+
+  .status_card {
+    background: var(--surface);
+    border: 1px solid var(--accent_dim);
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--fg);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .status_header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .spinner {
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--accent_dim);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+  .status_line {
+    color: var(--muted);
+    line-height: 1.5;
+  }
+  .status_log {
+    font-size: 11px;
+    color: var(--muted);
+    opacity: 0.7;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 90px;
+    overflow: hidden;
+  }
+  .status_log span {
+    opacity: 0.5;
+  }
+  .status_log span:last-child {
+    opacity: 1;
+  }
+  .elapsed {
+    margin-left: auto;
+    color: var(--muted);
+    font-weight: 400;
+    font-size: 11px;
+  }
+
+  .typing_cursor {
+    display: inline-block;
+    width: 7px;
+    height: 15px;
+    background: var(--fg);
+    vertical-align: text-bottom;
+    margin-left: 2px;
+    animation: blink 1s steps(2) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  footer {
+    position: sticky;
+    bottom: 0;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    padding-block: 12px calc(14px + env(safe-area-inset-bottom, 0px));
+  }
+  .composer {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+    max-width: 680px;
+    margin: 0 auto;
+    width: 100%;
+  }
+  .composer textarea {
+    flex: 1;
+    min-width: 0;
+    background: var(--surface);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.4;
+    resize: none;
+    outline: none;
+    max-height: 140px;
+  }
+  .composer textarea:focus {
+    border-color: var(--accent);
+  }
+  .composer textarea:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .composer button {
+    background: var(--accent);
+    color: #0e1116;
+    border: none;
+    border-radius: 10px;
+    padding: 12px 18px;
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .composer button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .footnote {
+    max-width: 680px;
+    margin: 8px auto 0;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    text-align: center;
+    letter-spacing: 0.04em;
+  }
+
+  @media (max-width: 500px) {
+    .brand h1 { font-size: 16px; }
+    .intro { padding: 14px 16px; }
+    .msg_body { font-size: 14px; }
+  }
+</style>
+
+<header>
+  <div class="brand">
+    <span class="brand_mark"></span>
+    <h1>DialUp AI</h1>
+    <span class="version">v0.3 beta</span>
+  </div>
+  <div class="uptime">
+    <span>status page</span>
+    <span class="uptime_right" id="uptime_status">degraded performance</span>
+  </div>
+</header>
+
+<main id="main">
+  <div class="intro">
+    <h2>Welcome to the AI nobody asked for</h2>
+    <p>Our servers are currently experiencing elevated load. Response times may be slower than usual. We appreciate your patience as our engineers work to resolve the issue.</p>
+    <div class="meta">
+      <span><b>infra</b> single node</span>
+      <span><b>region</b> us-east-nowhere</span>
+      <span><b>queue</b> <span id="queue_count">47</span> ahead of you</span>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="composer">
+    <textarea id="input" rows="1" placeholder="Type a message. It'll get there eventually." autocomplete="off"></textarea>
+    <button id="send">Send</button>
+  </div>
+  <div class="footnote">your request may be observed by very tired engineers</div>
+</footer>
+
+<script>
+  const main = document.getElementById('main');
+  const input = document.getElementById('input');
+  const sendBtn = document.getElementById('send');
+  const queueEl = document.getElementById('queue_count');
+  const uptimeEl = document.getElementById('uptime_status');
+
+  const history = [];
+  let busy = false;
+  let claudeSample = null;
+
+  (async () => {
+    const s = await window.claude?.use?.('sample');
+    claudeSample = s;
+    if (!s) {
+      uptimeEl.textContent = 'offline';
+      uptimeEl.style.color = 'var(--danger)';
+    }
+  })();
+
+  input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 140) + 'px';
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      submit();
+    }
+  });
+
+  sendBtn.addEventListener('click', submit);
+
+  function submit() {
+    const text = input.value.trim();
+    if (!text || busy) return;
+    input.value = '';
+    input.style.height = 'auto';
+    runTurn(text);
+  }
+
+  function addUserMsg(text) {
+    const wrap = document.createElement('div');
+    wrap.className = 'msg user';
+    wrap.innerHTML = '<div class="msg_label">you</div><div class="msg_body"></div>';
+    wrap.querySelector('.msg_body').textContent = text;
+    main.appendChild(wrap);
+    scrollDown();
+    return wrap;
+  }
+
+  function addStatusCard() {
+    const wrap = document.createElement('div');
+    wrap.className = 'msg';
+    wrap.innerHTML = `
+      <div class="status_card">
+        <div class="status_header">
+          <span class="spinner"></span>
+          <span class="status_title">connecting</span>
+          <span class="elapsed">0s</span>
+        </div>
+        <div class="status_line">Establishing connection to inference cluster...</div>
+        <div class="status_log"></div>
+      </div>
+    `;
+    main.appendChild(wrap);
+    scrollDown();
+    return wrap;
+  }
+
+  function addBotMsg() {
+    const wrap = document.createElement('div');
+    wrap.className = 'msg bot';
+    wrap.innerHTML = '<div class="msg_label">dialup ai</div><div class="msg_body"></div>';
+    main.appendChild(wrap);
+    scrollDown();
+    return wrap;
+  }
+
+  function scrollDown() {
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    });
+  }
+
+  const stages = [
+    { title: 'connecting', line: 'Establishing connection to inference cluster...' },
+    { title: 'queued', line: 'You are #47 in queue. Estimated wait: unknown.' },
+    { title: 'queued', line: 'You are #42 in queue. Our GPUs are warming up.' },
+    { title: 'retrying', line: 'Server returned 503. Retrying attempt 2 of 5...' },
+    { title: 'queued', line: 'You are #28 in queue. Thank you for your patience.' },
+    { title: 'degraded', line: 'Technical difficulties detected. Our engineers have been paged.' },
+    { title: 'retrying', line: 'Reconnecting to primary node. Attempt 3 of 5...' },
+    { title: 'queued', line: 'You are #15 in queue. Hang in there.' },
+    { title: 'thinking', line: 'Model is reasoning. This may take a while.' },
+    { title: 'thinking', line: 'Still thinking. Have you tried going for a walk?' },
+    { title: 'degraded', line: 'Load balancer is confused. Routing through backup region.' },
+    { title: 'thinking', line: 'Model is deeply contemplating your question.' },
+    { title: 'retrying', line: 'Database connection pool exhausted. Retrying...' },
+    { title: 'thinking', line: 'Almost there. The model is proofreading itself.' },
+    { title: 'finalizing', line: 'Response generated. Compressing output stream...' },
+  ];
+
+  async function runTurn(userText) {
+    busy = true;
+    sendBtn.disabled = true;
+    input.disabled = true;
+    uptimeEl.textContent = 'processing';
+    uptimeEl.style.color = 'var(--accent)';
+
+    addUserMsg(userText);
+    history.push({ role: 'user', content: userText });
+
+    const statusCard = addStatusCard();
+    const titleEl = statusCard.querySelector('.status_title');
+    const lineEl = statusCard.querySelector('.status_line');
+    const logEl = statusCard.querySelector('.status_log');
+    const elapsedEl = statusCard.querySelector('.elapsed');
+
+    const start = Date.now();
+    const log = [];
+
+    const elapsedTimer = setInterval(() => {
+      const s = Math.floor((Date.now() - start) / 1000);
+      elapsedEl.textContent = s + 's';
+    }, 500);
+
+    const queueTimer = setInterval(() => {
+      const n = Math.max(3, parseInt(queueEl.textContent, 10) - Math.floor(Math.random() * 3));
+      queueEl.textContent = n;
+    }, 2500);
+
+    // real ai call in parallel
+    let aiPromise = null;
+    if (claudeSample) {
+      const prompt = history.map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content }));
+      aiPromise = claudeSample(prompt, {
+        modelTier: 'quick',
+      }).catch(err => ({ error: err }));
+    } else {
+      aiPromise = Promise.resolve({ text: "The AI call needs the sample capability. The site is working, you just can't talk to the model without it.", error: null });
+    }
+
+    // cycle fake statuses
+    let stageIdx = 0;
+    let stageDone = false;
+
+    const minStallMs = 22000;
+    const maxStallMs = 55000;
+    const started = Date.now();
+
+    const cycleStage = async () => {
+      while (!stageDone && stageIdx < stages.length) {
+        const stage = stages[stageIdx];
+        titleEl.textContent = stage.title;
+        lineEl.textContent = stage.line;
+        log.push(`[${new Date().toLocaleTimeString()}] ${stage.title}: ${stage.line}`);
+        if (log.length > 4) log.shift();
+        logEl.innerHTML = log.map(l => `<span>${l}</span>`).join('');
+        stageIdx++;
+        const delay = 2200 + Math.random() * 2600;
+        await sleep(delay);
+      }
+    };
+
+    const stageLoop = cycleStage();
+
+    // wait for both: real ai done AND minimum stall time elapsed
+    const result = await aiPromise;
+    const elapsed = Date.now() - started;
+    const remaining = Math.max(0, minStallMs - elapsed);
+    if (remaining > 0) await sleep(remaining);
+    stageDone = true;
+    await stageLoop;
+
+    clearInterval(queueTimer);
+
+    titleEl.textContent = 'streaming';
+    lineEl.textContent = 'Delivering response byte by byte over 56k modem...';
+    await sleep(1200);
+
+    // remove status card, show bot message
+    statusCard.remove();
+    clearInterval(elapsedTimer);
+
+    const botMsg = addBotMsg();
+    const body = botMsg.querySelector('.msg_body');
+    const cursor = document.createElement('span');
+    cursor.className = 'typing_cursor';
+    body.appendChild(cursor);
+
+    let text = '';
+    if (result && result.error) {
+      text = 'Our model experienced an unrecoverable error. Please try again in approximately never.';
+    } else {
+      text = (result && result.text) || 'The model responded with silence.';
+    }
+
+    // slow stream
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      const span = document.createTextNode(ch);
+      body.insertBefore(span, cursor);
+      scrollDown();
+      // variable per-char delay for drama
+      let d = 35;
+      if (ch === ' ') d = 70;
+      if (ch === '.' || ch === ',' || ch === '!' || ch === '?') d = 400;
+      if (ch === '\n') d = 250;
+      await sleep(d);
+    }
+    cursor.remove();
+
+    history.push({ role: 'assistant', content: text });
+
+    busy = false;
+    sendBtn.disabled = false;
+    input.disabled = false;
+    uptimeEl.textContent = 'degraded performance';
+    uptimeEl.style.color = 'var(--danger)';
+    input.focus();
+  }
+
+  function sleep(ms) {
+    return new Promise(r => setTimeout(r, ms));
+  }
+
+  input.focus();
+</script>
