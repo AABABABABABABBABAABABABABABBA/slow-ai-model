@@ -156,6 +156,8 @@ function showAuthGate(initialMode = 'login') {
       saveState();
       renderUsageBadge();
       toast({ title: `Welcome, ${currentUser.email}` }, 2800, 'ok');
+      // Pull server-managed container state
+      await fetchContainer();
     } catch (err2) {
       spin.remove();
       let m = err2.message || String(err2);
@@ -305,9 +307,11 @@ function applyTheme() {
 }
 applyTheme();
 
-// ---------- container -------------------
-const containerSessionId = 'ctr_' + Array.from(crypto.getRandomValues(new Uint8Array(6))).map(b => b.toString(16).padStart(2, '0')).join('');
-const containerStartedAt = Date.now();
+// ---------- container (server-side, D1-backed) -------------------
+// containerState comes from /api/container — survives reload, logout, device change
+let containerState = null;
+let containerStartedAt = 0;   // ms epoch, synced from server
+
 function fmtUptime(ms) {
   const s = Math.floor(ms / 1000);
   const h = Math.floor(s / 3600);
@@ -315,7 +319,36 @@ function fmtUptime(ms) {
   const ss = s % 60;
   return (h ? String(h).padStart(2, '0') + ':' : '') + String(m).padStart(2, '0') + ':' + String(ss).padStart(2, '0');
 }
-setInterval(() => { containerUptimeEl.textContent = fmtUptime(Date.now() - containerStartedAt); }, 1000);
+
+async function fetchContainer() {
+  try {
+    const r = await apiFetch('/container', { method: 'GET' });
+    if (!r.ok) return null;
+    const j = await r.json();
+    containerState = j.container;
+    containerStartedAt = containerState.created_at;
+    return containerState;
+  } catch { return null; }
+}
+
+async function stopContainer() {
+  const r = await apiFetch('/container/stop', { method: 'POST' });
+  if (r.ok) { containerState = null; containerStartedAt = 0; }
+  return r.ok;
+}
+async function restartContainer() {
+  const r = await apiFetch('/container/restart', { method: 'POST' });
+  if (!r.ok) return null;
+  const j = await r.json();
+  containerState = j.container;
+  containerStartedAt = containerState.created_at;
+  return containerState;
+}
+
+setInterval(() => {
+  if (!containerStartedAt) { containerUptimeEl.textContent = '--:--'; return; }
+  containerUptimeEl.textContent = fmtUptime(Date.now() - containerStartedAt);
+}, 1000);
 containerBtn.addEventListener('click', openContainerModal);
 
 // ---------- conversation ----------------
@@ -891,7 +924,8 @@ function runJs(code, wrap) {
   if (existing?.classList?.contains('exec_output')) existing.remove();
   const out = document.createElement('div');
   out.className = 'exec_output';
-  out.innerHTML = `<div class="exec_head"><span>stdout · ${containerSessionId.slice(0,12)}</span><button class="close">×</button></div><div class="exec_lines"><div class="exec_line" style="color:var(--muted)">running...</div></div>`;
+  const ctrId = containerState?.id || 'local';
+  out.innerHTML = `<div class="exec_head"><span>stdout · ${ctrId.slice(0,12)}</span><button class="close">×</button></div><div class="exec_lines"><div class="exec_line" style="color:var(--muted)">running...</div></div>`;
   wrap.after(out);
   out.querySelector('.close').addEventListener('click', () => out.remove());
   const started = performance.now();
@@ -936,7 +970,7 @@ addEventListener('error',e=>push('error',[e.message||'error']));
         lines.appendChild(d);
       });
     }
-    out.querySelector('.exec_head span').textContent = `stdout · ${(performance.now() - started).toFixed(0)}ms · ${containerSessionId.slice(0,12)}`;
+    out.querySelector('.exec_head span').textContent = `stdout · ${(performance.now() - started).toFixed(0)}ms · ${(containerState?.id || 'local').slice(0,12)}`;
   };
   window.addEventListener('message', handler);
   document.body.appendChild(iframe);
@@ -1191,21 +1225,63 @@ function openSettings() {
 
 function openContainerModal() {
   openModal('Your container', (p) => {
+    let busyBtn = false;
     const render = () => {
-      const up = fmtUptime(Date.now() - containerStartedAt);
-      const cpu = 3 + Math.round(Math.random() * 6);
-      const mem = 12 + Math.round(Math.random() * 10);
+      if (!containerState) {
+        p.innerHTML = `
+          <div style="text-align:center;padding:20px;color:var(--muted)">No running container. It'll be provisioned on your next chat.</div>
+          <div style="text-align:center;margin-top:12px"><button class="btn_primary" id="start_btn">Start now</button></div>
+        `;
+        p.querySelector('#start_btn').addEventListener('click', async () => {
+          await fetchContainer();
+          render();
+        });
+        return;
+      }
+      const c = containerState;
+      const up = fmtUptime(Date.now() - c.created_at);
+      const statusColor = c.status === 'running' ? 'var(--ok)' : 'var(--muted)';
       p.innerHTML = `
         <div class="stats_grid">
-          <div class="stat_card"><div class="stat_label">Session</div><div class="stat_value" style="font-size:14px;overflow-wrap:break-word">${containerSessionId}</div></div>
-          <div class="stat_card"><div class="stat_label">Status</div><div class="stat_value" style="color:var(--ok)">RUNNING</div></div>
+          <div class="stat_card"><div class="stat_label">Session</div><div class="stat_value" style="font-size:14px;overflow-wrap:break-word">${c.id}</div></div>
+          <div class="stat_card"><div class="stat_label">Status</div><div class="stat_value" style="color:${statusColor}">${c.status.toUpperCase()}</div></div>
           <div class="stat_card"><div class="stat_label">Uptime</div><div class="stat_value">${up}</div></div>
-          <div class="stat_card"><div class="stat_label">CPU</div><div class="stat_value">${cpu}%</div></div>
-          <div class="stat_card"><div class="stat_label">Memory</div><div class="stat_value">${mem}%</div></div>
-          <div class="stat_card"><div class="stat_label">Auth</div><div class="stat_value" style="font-size:14px;color:var(--ok)">VERIFIED</div></div>
+          <div class="stat_card"><div class="stat_label">Region</div><div class="stat_value" style="font-size:14px">${c.region || '?'}</div></div>
+          <div class="stat_card"><div class="stat_label">CPU · RAM</div><div class="stat_value" style="font-size:14px">${c.cpu} vCPU · ${c.memory_mb}MB</div></div>
+          <div class="stat_card"><div class="stat_label">Disk</div><div class="stat_value" style="font-size:14px">${c.disk_mb}MB</div></div>
         </div>
-        <div style="font-size:12px;color:var(--muted);margin-top:10px">Container is private to this tab, isolated from other sessions. Runs until you close the page.</div>
+        <div style="margin-top:14px">
+          <div class="setting_row">
+            <div><div class="setting_label">Image</div></div>
+            <div style="font-family:var(--mono);font-size:12px;color:var(--muted)">${c.image}</div>
+          </div>
+          <div class="setting_row">
+            <div><div class="setting_label">Provisioned</div></div>
+            <div style="font-family:var(--mono);font-size:12px;color:var(--muted)">${new Date(c.created_at).toISOString().replace('T',' ').slice(0,19)} UTC</div>
+          </div>
+          <div class="setting_row">
+            <div><div class="setting_label">Lifecycle</div><div class="setting_sub">Stored in Cloudflare D1. Survives logout, reload, and switching devices.</div></div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end">
+          <button class="btn_primary" id="restart_btn" style="background:transparent;color:var(--fg);border:1px solid var(--border)">Restart</button>
+          <button class="btn_primary" id="stop_btn" style="background:var(--danger);color:#fff">Stop</button>
+        </div>
       `;
+      p.querySelector('#restart_btn').addEventListener('click', async () => {
+        if (busyBtn) return; busyBtn = true;
+        toast({ title: 'Restarting container...' }, 1800);
+        await restartContainer();
+        busyBtn = false;
+        render();
+      });
+      p.querySelector('#stop_btn').addEventListener('click', async () => {
+        if (busyBtn) return; busyBtn = true;
+        await stopContainer();
+        busyBtn = false;
+        render();
+        toast({ title: 'Container stopped.' }, 2000, 'ok');
+      });
     };
     render();
     const t = setInterval(() => { if (!document.body.contains(p)) { clearInterval(t); return; } render(); }, 2000);
@@ -1241,6 +1317,8 @@ renderChatMeter();
     saveState();
     renderUsageBadge();
     edgePingEl.textContent = 'edge · ' + me.email.split('@')[0];
+    // Pull server-managed container state
+    await fetchContainer();
   } catch (e) {
     toast({ title: 'Could not reach backend: ' + (e.message || e) }, 6000, 'err');
     edgePingEl.textContent = 'offline';

@@ -26,3 +26,20 @@ CREATE TABLE IF NOT EXISTS chat_events (
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 CREATE INDEX IF NOT EXISTS idx_chat_events_user ON chat_events(user_id, created_at DESC);
+
+-- Per-user sandbox container session (server-side state).
+CREATE TABLE IF NOT EXISTS containers (
+  id TEXT PRIMARY KEY,                    -- ctr_<12 hex>
+  user_id INTEGER NOT NULL,
+  image TEXT NOT NULL DEFAULT 'chadgpt/runner:3.11-node20-alpine',
+  cpu INTEGER NOT NULL DEFAULT 2,
+  memory_mb INTEGER NOT NULL DEFAULT 1024,
+  disk_mb INTEGER NOT NULL DEFAULT 4096,
+  region TEXT,
+  status TEXT NOT NULL DEFAULT 'running',  -- 'running' | 'stopped'
+  created_at INTEGER NOT NULL,
+  last_seen_at INTEGER NOT NULL,
+  stopped_at INTEGER,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_containers_user ON containers(user_id, status);
