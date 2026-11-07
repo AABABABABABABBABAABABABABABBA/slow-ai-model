@@ -10,11 +10,8 @@ binding = "AI"
 enabled = true
 
 [vars]
-ALLOWED_ORIGINS = "http://localhost:8788"
+ALLOWED_ORIGINS = "https://chadgpt-964.pages.dev,http://localhost:8788"
 
-# Required secret (SAME value across all 3 workers):
-#   npx wrangler secret put SESSION_SECRET
-# Same SESSIONS KV namespace as chat + code workers:
-# [[kv_namespaces]]
-# binding = "SESSIONS"
-# id = "paste-id-here"
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "1b4345bdcf7248bd89be72d520af37f5"
