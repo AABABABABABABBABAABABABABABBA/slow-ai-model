@@ -150,8 +150,9 @@ export function unauthorized(msg) { return json({ error: msg || 'unauthorized' }
 export function forbidden(msg) { return json({ error: msg || 'forbidden' }, { status: 403 }); }
 
 // ---------- model gating ----------
-// Only 'fast' is free. Everything else needs plus.
-export const FREE_CHAT_MODELS = new Set(['fast']);
+// On Workers Paid, all chat models are free for every user. The Plus gate is
+// feature-based (code specialist, image generation, vision) not capability-based.
+export const FREE_CHAT_MODELS = new Set(['fast', 'small', 'tiny', 'auto']);
 export function userCanUseChatModel(user, model) {
   if (!user) return false;
   if (user.plan === 'plus') return true;

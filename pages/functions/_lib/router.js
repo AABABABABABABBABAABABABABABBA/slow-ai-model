@@ -3,14 +3,14 @@
 // Hybrid: fast regex heuristics first (free + instant), fallback to a
 // 1B LLM classifier for the ambiguous middle. Always returns something.
 
-// Experts. "plus: true" means Plus users only — free users get downgraded to
-// the chat free tier (Llama 3.2 1B) which costs essentially zero neurons.
+// Experts. All chat-worker models are free (Workers Paid absorbs the cost).
+// Only the code specialist worker is Plus-gated as a feature differentiator.
 const EXPERTS = {
   coder:    { worker: 'code', model: 'deepseek', label: 'ChadCoder',       desc: 'DeepSeek Coder 6.7B', plus: true },
-  reason:   { worker: 'chat', model: 'pro',      label: 'Llama 3.1 8B',    desc: 'reasoning + long-form', plus: true },
-  creative: { worker: 'chat', model: 'small',    label: 'Llama 3.2 3B',    desc: 'creative writing',      plus: true },
-  chat:     { worker: 'chat', model: 'fast',     label: 'Llama 3.2 1B',    desc: 'general chat (free)' },
-  tiny:     { worker: 'chat', model: 'fast',     label: 'Llama 3.2 1B',    desc: 'quick facts (free)' },
+  reason:   { worker: 'chat', model: 'fast',     label: 'Llama 3.1 8B',    desc: 'reasoning + long-form' },
+  creative: { worker: 'chat', model: 'small',    label: 'Llama 3.2 3B',    desc: 'creative writing' },
+  chat:     { worker: 'chat', model: 'fast',     label: 'Llama 3.1 8B',    desc: 'general chat' },
+  tiny:     { worker: 'chat', model: 'tiny',     label: 'Llama 3.2 1B',    desc: 'quick facts' },
 };
 
 // ---- fast regex classifier ----
