@@ -369,6 +369,17 @@
   .icon_btn svg { width: 20px; height: 20px; }
   .hamburger { display: none; }
 
+  .sidebar_scrim {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 55;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s;
+    display: none;
+  }
+
   main {
     flex: 1;
     overflow-y: auto;
@@ -1287,15 +1298,7 @@
       transform: translateX(0);
       box-shadow: 0 0 40px rgba(0,0,0,0.3);
     }
-    .sidebar_scrim {
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.4);
-      z-index: 55;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.25s;
-    }
+    .sidebar_scrim { display: block; }
     .sidebar_scrim.show { opacity: 1; pointer-events: auto; }
     .hamburger { display: inline-flex; }
     .welcome h1 { font-size: 22px; }
@@ -2183,6 +2186,7 @@ Hard rules you never cross: no CSAM, no sexual content involving minors, no porn
 
   // modals
   const modalRoot = document.createElement('div');
+  modalRoot.style.display = 'contents';
   document.body.appendChild(modalRoot);
 
   function openModal(opts) {
