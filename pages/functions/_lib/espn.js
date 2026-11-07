@@ -71,6 +71,17 @@ function fmtScoreboard(sb) {
   return `NBA scoreboard for ${date}:\n` + lines.join('\n');
 }
 
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+function fmtDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const h12 = d.getUTCHours() % 12 || 12;
+  const ampm = d.getUTCHours() >= 12 ? 'PM' : 'AM';
+  const mm = String(d.getUTCMinutes()).padStart(2, '0');
+  return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()} at ${h12}:${mm} ${ampm} UTC`;
+}
+
 function fmtTeam(abbr, data) {
   if (!data?.team) return '';
   const team = data.team;
@@ -82,7 +93,11 @@ function fmtTeam(abbr, data) {
   if (next) {
     const comp = next.competitions?.[0];
     const opp = comp?.competitors?.find(c => c.team?.abbreviation?.toLowerCase() !== abbr);
-    if (opp) nextStr = ` · Next: ${opp.homeAway === 'home' ? '@ ' : 'vs '}${opp.team.displayName} ${new Date(next.date).toUTCString().slice(5, 22)}`;
+    const dateStr = fmtDate(next.date);
+    if (opp && dateStr) {
+      const where = opp.homeAway === 'home' ? 'at' : 'vs';
+      nextStr = ` · Next game: ${where} ${opp.team.displayName} on ${dateStr}`;
+    }
   }
   const streak = lastDisplay ? ` · streak ${lastDisplay}` : '';
   return `${team.displayName} (${abbr.toUpperCase()}): ${record} ${standing}${streak}${nextStr}`;

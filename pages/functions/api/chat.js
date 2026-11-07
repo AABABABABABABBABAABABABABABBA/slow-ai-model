@@ -72,7 +72,7 @@ export async function onRequestPost({ request, env }) {
       enrichmentTag = result.tag;
       if (result.context) {
         const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
-        last.content = `[Live data fetched ${stamp}. Prefer these numbers over your training. Do not invent stats, prices, or outcomes.]\n\n${result.context}\n\n---\n\nUser question:\n${last.content}`;
+        last.content = `[Live data fetched ${stamp}. Prefer these numbers over your training. Do not invent stats, prices, or outcomes. Copy dates, times, and numbers VERBATIM from the data below — do not reformat them, do not guess the year/month, do not omit fields.]\n\n${result.context}\n\n---\n\nUser question:\n${last.content}`;
       }
     }
   }
