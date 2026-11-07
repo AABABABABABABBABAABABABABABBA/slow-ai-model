@@ -13,6 +13,9 @@ enabled = true
 # Override in production via: npx wrangler secret put ALLOWED_ORIGINS
 [vars]
 ALLOWED_ORIGINS = "https://chadgpt-964.pages.dev,http://localhost:8788"
+# Pages Functions proxy sits between client and worker, so IP binding can't match.
+# Set to "true" only if clients call the worker directly.
+ENFORCE_IP_BINDING = "false"
 
 # ---- Required secrets, set with wrangler secret put:
 # SESSION_SECRET      — random 32+ byte string, SAME value across all 3 workers

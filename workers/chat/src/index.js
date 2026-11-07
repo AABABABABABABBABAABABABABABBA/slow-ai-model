@@ -121,13 +121,20 @@ async function verifySession(request, env) {
   if (!Number.isFinite(expiresAt) || expiresAt * 1000 < Date.now()) return { ok: false, err: 'expired' };
 
   // Binding check: same IP + UA fingerprint (prefix) as issued to.
-  const ip = request.headers.get('CF-Connecting-IP') || '';
-  const ua = (request.headers.get('User-Agent') || '').slice(0, 200);
-  const nowBinding = (await sha256Hex(ip + '|' + ua)).slice(0, 16);
-  if (nowBinding !== bindingPrefix) return { ok: false, err: 'binding mismatch' };
+  // Skippable when the worker is called by our trusted Pages Function proxy
+  // (the proxy has no way to forward the original client's CF-Connecting-IP
+  // through Cloudflare's network, so the HMAC alone secures the hop).
+  if (env.ENFORCE_IP_BINDING !== 'false') {
+    const ip = request.headers.get('CF-Connecting-IP') || '';
+    const ua = (request.headers.get('User-Agent') || '').slice(0, 200);
+    const nowBinding = (await sha256Hex(ip + '|' + ua)).slice(0, 16);
+    if (nowBinding !== bindingPrefix) return { ok: false, err: 'binding mismatch' };
+  }
 
-  // KV check (if bound) — supports revocation.
-  if (env.SESSIONS) {
+  // Optional KV revocation check — only used for tokens the worker minted
+  // itself (via /session/start). Pages-Function-minted tokens skip this
+  // because they have no KV row.
+  if (env.SESSIONS && env.ENFORCE_KV_REVOCATION === 'true') {
     try {
       const raw = await env.SESSIONS.get('sess:' + sessionId);
       if (!raw) return { ok: false, err: 'revoked' };

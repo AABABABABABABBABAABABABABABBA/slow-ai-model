@@ -111,11 +111,13 @@ async function verifySession(request, env) {
   if (!timingSafeEq(expected, sig)) return { ok: false, err: 'bad signature' };
   const expiresAt = Number(expiresAtStr);
   if (!Number.isFinite(expiresAt) || expiresAt * 1000 < Date.now()) return { ok: false, err: 'expired' };
-  const ip = request.headers.get('CF-Connecting-IP') || '';
-  const ua = (request.headers.get('User-Agent') || '').slice(0, 200);
-  const nowBinding = (await sha256Hex(ip + '|' + ua)).slice(0, 16);
-  if (nowBinding !== bindingPrefix) return { ok: false, err: 'binding mismatch' };
-  if (env.SESSIONS) {
+  if (env.ENFORCE_IP_BINDING !== 'false') {
+    const ip = request.headers.get('CF-Connecting-IP') || '';
+    const ua = (request.headers.get('User-Agent') || '').slice(0, 200);
+    const nowBinding = (await sha256Hex(ip + '|' + ua)).slice(0, 16);
+    if (nowBinding !== bindingPrefix) return { ok: false, err: 'binding mismatch' };
+  }
+  if (env.SESSIONS && env.ENFORCE_KV_REVOCATION === 'true') {
     try { if (!(await env.SESSIONS.get('sess:' + sessionId))) return { ok: false, err: 'revoked' }; } catch (_) {}
   }
   return { ok: true, sessionId };

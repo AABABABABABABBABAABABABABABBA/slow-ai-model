@@ -17,85 +17,130 @@ function renderMd(text) {
 }
 function escapeHtml(s) { return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
 
-// ---------- session + auth --------------
-const sessionState = { token: null, sessionId: null, expiresAt: 0 };
+// ---------- auth (cookie-based, server-side) ----------
+let currentUser = null;
 
-async function startSession(turnstileToken) {
-  const r = await fetch(CFG.chatUrl + '/session/start', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ turnstile_token: turnstileToken || null }),
-    credentials: 'omit',
-  });
-  if (!r.ok) {
-    const body = await r.json().catch(() => ({}));
-    throw new Error(body.error || `session start failed (${r.status})`);
-  }
-  const data = await r.json();
-  sessionState.token = data.token;
-  sessionState.sessionId = data.session_id;
-  sessionState.expiresAt = data.expires_at * 1000;
-  return data;
-}
-
-async function ensureSession() {
-  if (sessionState.token && Date.now() < sessionState.expiresAt - 60000) return sessionState.token;
-  if (!CFG.turnstileSiteKey) {
-    await startSession(null);
-    return sessionState.token;
-  }
-  // need Turnstile — open the gate overlay and wait
-  const token = await openGate();
-  await startSession(token);
-  return sessionState.token;
-}
-
-async function authedFetch(url, opts) {
-  const token = await ensureSession();
-  const headers = Object.assign({ 'Content-Type': 'application/json' }, opts?.headers || {});
-  headers['Authorization'] = 'Bearer ' + token;
-  const res = await fetch(url, Object.assign({}, opts, { headers, credentials: 'omit' }));
-  if (res.status === 401) {
-    sessionState.token = null;
-    const newToken = await ensureSession();
-    headers['Authorization'] = 'Bearer ' + newToken;
-    return fetch(url, Object.assign({}, opts, { headers, credentials: 'omit' }));
-  }
+async function apiFetch(path, opts = {}) {
+  const res = await fetch(CFG.apiBase + path, Object.assign({}, opts, {
+    credentials: 'same-origin',
+    headers: Object.assign(
+      opts.body && !opts.headers?.['Content-Type']
+        ? { 'Content-Type': 'application/json' }
+        : {},
+      opts.headers || {}
+    ),
+  }));
   return res;
 }
 
-// ---------- Turnstile gate --------------
-function loadTurnstile() {
-  if (document.getElementById('cf_turnstile_script')) return;
-  const s = document.createElement('script');
-  s.id = 'cf_turnstile_script';
-  s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileReady';
-  s.async = true; s.defer = true;
-  document.head.appendChild(s);
+async function fetchMe() {
+  const r = await apiFetch('/me', { method: 'GET' });
+  if (r.status === 401) { currentUser = null; return null; }
+  if (!r.ok) throw new Error(`me failed: ${r.status}`);
+  const j = await r.json();
+  currentUser = j.user;
+  return currentUser;
 }
-window.onTurnstileReady = () => { /* ready */ };
 
-function openGate() {
-  return new Promise((resolve, reject) => {
-    const gate = document.createElement('div');
-    gate.className = 'gate';
-    gate.innerHTML = `
-      <h2>One quick check</h2>
-      <p>We use a Cloudflare challenge to keep bots out. This takes a second.</p>
-      <div class="ts" id="ts_widget"></div>
-    `;
-    document.body.appendChild(gate);
-    loadTurnstile();
-    const tryRender = () => {
-      if (!window.turnstile) return setTimeout(tryRender, 100);
-      window.turnstile.render('#ts_widget', {
-        sitekey: CFG.turnstileSiteKey,
-        callback: (token) => { gate.remove(); resolve(token); },
-        'error-callback': () => { reject(new Error('turnstile failed')); },
-      });
-    };
-    tryRender();
+async function doSignup(email, password) {
+  const r = await apiFetch('/signup', { method: 'POST', body: JSON.stringify({ email, password }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `signup failed (${r.status})`);
+  currentUser = j.user;
+  return currentUser;
+}
+async function doLogin(email, password) {
+  const r = await apiFetch('/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `login failed (${r.status})`);
+  currentUser = j.user;
+  return currentUser;
+}
+async function doLogout() {
+  await apiFetch('/logout', { method: 'POST' });
+  currentUser = null;
+}
+async function doUpgrade(targetPlan) {
+  const r = await apiFetch('/upgrade', { method: 'POST', body: JSON.stringify({ plan: targetPlan }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || 'upgrade failed');
+  if (currentUser) currentUser.plan = j.plan;
+  state.plan = j.plan;
+  saveState();
+  return j.plan;
+}
+
+// ---------- login / signup gate ----------
+function showAuthGate(initialMode = 'login') {
+  // Hide the whole chat UI until the user signs in.
+  document.body.classList.add('authed-off');
+  const existing = document.querySelector('.gate');
+  if (existing) existing.remove();
+  const gate = document.createElement('div');
+  gate.className = 'gate';
+  gate.innerHTML = `
+    <div style="width:100%;max-width:360px;display:flex;flex-direction:column;gap:14px">
+      <div style="text-align:center">
+        <div style="font-size:30px;font-weight:700;letter-spacing:-0.02em;margin-bottom:4px">ChadGPT</div>
+        <div style="color:var(--muted);font-size:13px">Direct AI on Cloudflare — free to sign up</div>
+      </div>
+      <div style="display:flex;gap:4px;padding:4px;background:var(--user_bubble);border-radius:12px">
+        <button class="auth_tab" data-tab="login" style="flex:1;padding:8px;border-radius:9px;border:none;background:transparent;color:var(--fg);cursor:pointer;font-family:inherit;font-weight:500">Log in</button>
+        <button class="auth_tab" data-tab="signup" style="flex:1;padding:8px;border-radius:9px;border:none;background:transparent;color:var(--fg);cursor:pointer;font-family:inherit;font-weight:500">Sign up</button>
+      </div>
+      <form id="auth_form" style="display:flex;flex-direction:column;gap:10px" novalidate>
+        <input type="email" id="auth_email" placeholder="you@example.com" required autocomplete="email"
+          style="padding:12px 14px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--fg);font-family:inherit;font-size:15px;outline:none">
+        <input type="password" id="auth_password" placeholder="password (min 8 chars)" required autocomplete="current-password" minlength="8"
+          style="padding:12px 14px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--fg);font-family:inherit;font-size:15px;outline:none">
+        <button type="submit" id="auth_submit" class="btn_primary" style="padding:12px;font-size:15px">Log in</button>
+        <div id="auth_err" style="color:var(--danger);font-size:13px;min-height:18px;text-align:center"></div>
+      </form>
+      <div style="text-align:center;color:var(--muted);font-size:11px">By continuing you accept that this is a demo app on Cloudflare free tier.</div>
+    </div>
+  `;
+  document.body.appendChild(gate);
+
+  let mode = initialMode;
+  const tabs = gate.querySelectorAll('.auth_tab');
+  const emailInput = gate.querySelector('#auth_email');
+  const pwInput = gate.querySelector('#auth_password');
+  const submit = gate.querySelector('#auth_submit');
+  const err = gate.querySelector('#auth_err');
+
+  const applyTab = () => {
+    tabs.forEach(t => {
+      const active = t.getAttribute('data-tab') === mode;
+      t.style.background = active ? 'var(--bg)' : 'transparent';
+      t.style.boxShadow = active ? '0 1px 2px rgba(0,0,0,0.08)' : 'none';
+    });
+    submit.textContent = mode === 'signup' ? 'Create account' : 'Log in';
+    pwInput.autocomplete = mode === 'signup' ? 'new-password' : 'current-password';
+  };
+  tabs.forEach(t => t.addEventListener('click', () => { mode = t.getAttribute('data-tab'); err.textContent = ''; applyTab(); }));
+  applyTab();
+
+  gate.querySelector('#auth_form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    err.textContent = '';
+    submit.disabled = true;
+    submit.textContent = (mode === 'signup' ? 'Creating...' : 'Signing in...');
+    try {
+      if (mode === 'signup') await doSignup(emailInput.value.trim(), pwInput.value);
+      else await doLogin(emailInput.value.trim(), pwInput.value);
+      gate.remove();
+      document.body.classList.remove('authed-off');
+      state.plan = currentUser.plan || 'free';
+      saveState();
+      renderUsageBadge();
+      toast({ title: `Hey ${currentUser.email}` }, 2800, 'ok');
+    } catch (e) {
+      err.textContent = e.message || String(e);
+      submit.disabled = false;
+      applyTab();
+    }
   });
+  emailInput.focus();
 }
 
 // ---------- state -----------------------
@@ -517,7 +562,7 @@ async function runChatTurn(userText, attachments, opts) {
       for (const a of describeTargets) {
         try {
           const b64 = a.dataUrl.split(',')[1];
-          const r = await authedFetch(CFG.imageUrl + '/describe', {
+          const r = await apiFetch('/describe', {
             method: 'POST',
             body: JSON.stringify({ image_b64: b64, prompt: 'Describe this image briefly, focused on the main subject and style.' }),
           });
@@ -549,7 +594,7 @@ async function runChatTurn(userText, attachments, opts) {
   currentAbort = new AbortController();
 
   const m = modelObj();
-  const workerUrl = m.worker === 'code' ? CFG.codeUrl : CFG.chatUrl;
+  const apiPath = m.worker === 'code' ? '/code' : '/chat';
   const apiMessages = history
     .map(h => ({ role: h.role === 'assistant' ? 'assistant' : 'user', content: (h.role === 'user' ? (h === history[history.length - 1] ? finalUserText : h.content) : h.content) }))
     .filter(h => h.content);
@@ -557,7 +602,7 @@ async function runChatTurn(userText, attachments, opts) {
   let accumulated = '';
   let errText = null;
   try {
-    const res = await authedFetch(workerUrl + '/chat', {
+    const res = await apiFetch(apiPath, {
       method: 'POST',
       body: JSON.stringify({
         messages: apiMessages,
@@ -662,7 +707,7 @@ async function runImageTurn(prompt, opts) {
 
   currentAbort = new AbortController();
   try {
-    const res = await authedFetch(CFG.imageUrl + '/image', {
+    const res = await apiFetch('/image', {
       method: 'POST',
       body: JSON.stringify({ prompt, steps: 4 }),
       signal: currentAbort.signal,
@@ -880,12 +925,20 @@ function openPopover(anchor, items, align) {
 modelBtn.addEventListener('click', () => {
   openPopover(modelBtn, [
     { label: 'Models' },
-    ...MODELS.map(m => ({
-      title: m.name + (m.sub ? ' ' + m.sub : ''),
-      sub: m.desc,
-      selected: state.model === m.id,
-      onClick: () => { state.model = m.id; saveState(); updateModelPicker(); toast({ title: 'Switched to ' + m.name + ' ' + m.sub }, 2200, 'ok'); },
-    })),
+    ...MODELS.map(m => {
+      const needsPlus = m.id !== 'fast';
+      const locked = needsPlus && state.plan !== 'plus';
+      return {
+        title: m.name + (m.sub ? ' ' + m.sub : '') + (needsPlus ? ' · Plus' : ''),
+        sub: locked ? 'Requires Plus · click to upgrade' : m.desc,
+        selected: state.model === m.id,
+        onClick: () => {
+          if (locked) { openPaywallModal(`${m.name} ${m.sub} requires Plus`); return; }
+          state.model = m.id; saveState(); updateModelPicker();
+          toast({ title: 'Switched to ' + m.name + ' ' + m.sub }, 2200, 'ok');
+        },
+      };
+    }),
   ]);
 });
 function updateModelPicker() {
@@ -955,11 +1008,16 @@ function openPaywallModal(headline) {
         </div>
       </div>
     `;
-    p.querySelector('#buy_plus').addEventListener('click', () => {
-      state.plan = state.plan === 'plus' ? 'free' : 'plus';
-      saveState(); renderUsageBadge();
-      toast({ title: state.plan === 'plus' ? 'Welcome to Plus.' : 'Switched to Free.' }, 2500, 'ok');
-      closeModal();
+    p.querySelector('#buy_plus').addEventListener('click', async () => {
+      const target = state.plan === 'plus' ? 'free' : 'plus';
+      try {
+        await doUpgrade(target);
+        renderUsageBadge();
+        toast({ title: state.plan === 'plus' ? 'Welcome to Plus.' : 'Switched to Free.' }, 2500, 'ok');
+        closeModal();
+      } catch (e) {
+        toast({ title: 'Upgrade failed: ' + e.message }, 4000, 'err');
+      }
     });
   });
 }
@@ -1047,8 +1105,8 @@ function openSettings() {
         <button class="toggle ${state.settings.autoScroll?'on':''}" data-k="autoScroll"></button>
       </div>
       <div class="setting_row">
-        <div><div class="setting_label">Session</div><div class="setting_sub">${sessionState.sessionId || 'not started'}</div></div>
-        <div style="font-size:12px;font-family:var(--mono);color:var(--muted)">${sessionState.expiresAt ? 'expires ' + new Date(sessionState.expiresAt).toLocaleTimeString() : ''}</div>
+        <div><div class="setting_label">Account</div><div class="setting_sub">${currentUser?.email || 'not signed in'} · ${currentUser?.plan || 'free'}</div></div>
+        <button class="btn_primary" id="logout_btn" style="background:transparent;color:var(--fg);border:1px solid var(--border)">Log out</button>
       </div>
     `;
     p.querySelector('#theme_sel').value = state.theme;
@@ -1059,6 +1117,12 @@ function openSettings() {
       t.classList.toggle('on');
       saveState();
     }));
+    const lo = p.querySelector('#logout_btn');
+    if (lo) lo.addEventListener('click', async () => {
+      await doLogout();
+      closeModal();
+      showAuthGate('login');
+    });
   });
 }
 
@@ -1104,11 +1168,18 @@ renderChatMeter();
 
 (async () => {
   try {
-    await ensureSession();
-    edgePingEl.textContent = 'edge · ' + (sessionState.sessionId ? sessionState.sessionId.slice(0, 8) : 'ok');
-    toast({ title: 'Connected to Cloudflare Workers AI · free tier' }, 2800, 'ok');
+    const me = await fetchMe();
+    if (!me) {
+      edgePingEl.textContent = 'sign in';
+      showAuthGate('login');
+      return;
+    }
+    state.plan = me.plan || 'free';
+    saveState();
+    renderUsageBadge();
+    edgePingEl.textContent = 'edge · ' + me.email.split('@')[0];
   } catch (e) {
-    toast({ title: 'Could not start session: ' + (e.message || e) }, 6000, 'err');
+    toast({ title: 'Could not reach backend: ' + (e.message || e) }, 6000, 'err');
     edgePingEl.textContent = 'offline';
   }
 })();

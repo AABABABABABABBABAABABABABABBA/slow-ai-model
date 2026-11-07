@@ -11,6 +11,7 @@ enabled = true
 
 [vars]
 ALLOWED_ORIGINS = "https://chadgpt-964.pages.dev,http://localhost:8788"
+ENFORCE_IP_BINDING = "false"
 
 [[kv_namespaces]]
 binding = "SESSIONS"

@@ -1,17 +1,9 @@
-// ChadGPT frontend config
-// Set these after you deploy each worker. Put this file in /pages/config.js.
-// The URLs are PUBLIC — they get sent to anyone who loads the site. Every
-// worker enforces origin + session token + rate limit server-side, so a leaked
-// URL is useless without a valid session.
+// ChadGPT frontend config.
+// The worker URLs are hidden server-side (in the Pages Function env). The
+// frontend only knows about /api/* on this same origin. Nothing to edit here
+// unless you want to swap brand/default model.
 window.CHADGPT_CONFIG = Object.freeze({
-  chatUrl:  'https://chadgpt-chat.corbyiscool.workers.dev',
-  codeUrl:  'https://chadgpt-code.corbyiscool.workers.dev',
-  imageUrl: 'https://chadgpt-image.corbyiscool.workers.dev',
-
-  // Set after creating a Turnstile site at dash.cloudflare.com → Turnstile.
-  // Empty = no challenge (workers still enforce origin + session binding + rate limit).
-  turnstileSiteKey: '',
-
+  apiBase: '/api',
   defaultModel: 'fast',
   brand: 'ChadGPT',
 });
