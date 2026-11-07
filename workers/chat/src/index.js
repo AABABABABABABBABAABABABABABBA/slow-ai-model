@@ -203,22 +203,49 @@ async function handleChat(request, env, cors) {
   const max_tokens = Math.min(Math.max(body.max_tokens || 1024, 1), 4096);
   const temperature = typeof body.temperature === 'number' ? Math.max(0, Math.min(2, body.temperature)) : 0.6;
 
-  try {
-    const result = await env.AI.run(model, { messages, stream, max_tokens, temperature });
-    if (stream) {
-      return new Response(result, {
-        headers: Object.assign({
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'X-Session-Id': session.sessionId,
-          'X-Model': model,
-        }, cors),
-      });
+  // Try the requested model, then one retry on transient errors, then a
+  // cheap fallback. Workers AI is flaky under load — a raw 500 is a bad UX
+  // when a free 3B model almost certainly has capacity.
+  const FALLBACK = '@cf/meta/llama-3.2-3b-instruct';
+  const attempts = [
+    { model, label: 'primary' },
+    { model, label: 'retry' },
+    ...(model !== FALLBACK ? [{ model: FALLBACK, label: 'fallback' }] : []),
+  ];
+  let lastErr = null;
+  for (let i = 0; i < attempts.length; i++) {
+    const a = attempts[i];
+    try {
+      const result = await env.AI.run(a.model, { messages, stream, max_tokens, temperature });
+      if (stream) {
+        return new Response(result, {
+          headers: Object.assign({
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'X-Session-Id': session.sessionId,
+            'X-Model': a.model,
+            'X-Model-Attempt': a.label,
+          }, cors),
+        });
+      }
+      return json({ response: result.response, model: a.model, attempt: a.label, session_id: session.sessionId }, 200, cors);
+    } catch (err) {
+      lastErr = err;
+      // 2xx/non-retriable errors bail immediately; transient (5xx, rate, timeout) loop.
+      const msg = err?.message || String(err);
+      const retriable = /50\d|timeout|rate|capacity|overload|unavailable|try again/i.test(msg);
+      if (!retriable && i === 0) break;  // fast path: user error, no point retrying
+      if (i < attempts.length - 1) {
+        await new Promise(r => setTimeout(r, 400 * (i + 1)));  // 400ms, 800ms
+      }
     }
-    return json({ response: result.response, model, session_id: session.sessionId }, 200, cors);
-  } catch (err) {
-    return json({ error: 'inference failed', detail: err?.message || String(err) }, 500, cors);
   }
+  return json({
+    error: 'inference failed',
+    detail: lastErr?.message || String(lastErr),
+    attempts: attempts.length,
+    hint: 'Tried primary model, one retry, and the fallback. Workers AI is likely saturated — wait a few seconds and try again.',
+  }, 503, cors);
 }
 
 // ---------------- Helpers ----------------

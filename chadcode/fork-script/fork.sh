@@ -30,18 +30,30 @@ if [[ -e "$DST" ]]; then
   echo "output dir already exists: $DST — refusing to overwrite" >&2; exit 1
 fi
 
-echo "[1/6] rsync source -> $DST"
-rsync -a --exclude='.git' --exclude='node_modules' --exclude='dist' --exclude='.turbo' "$SRC"/ "$DST"/
+echo "[1/6] copy source -> $DST"
+if command -v rsync >/dev/null 2>&1; then
+  rsync -a --exclude='.git' --exclude='node_modules' --exclude='dist' --exclude='.turbo' "$SRC"/ "$DST"/
+else
+  mkdir -p "$DST"
+  # tar pipe is faster than cp -r and handles excludes cleanly.
+  tar -C "$SRC" --exclude='.git' --exclude='node_modules' --exclude='dist' --exclude='.turbo' -cf - . | tar -C "$DST" -xf -
+fi
 
 cd "$DST"
 
 echo "[2/6] rename filenames (opencode -> chadcode)"
 # Rename files + dirs, deepest first so parent renames don't invalidate paths.
+# Only rewrite the BASENAME so we don't try to move into a dir that is still
+# named "opencode" because its own rename hasn't happened yet.
 find . -depth -name '*opencode*' | while read -r f; do
-  new="${f//opencode/chadcode}"
-  new="${new//OpenCode/ChadCode}"
-  new="${new//OPENCODE/CHADCODE}"
-  [[ "$f" != "$new" ]] && mv "$f" "$new"
+  dir=$(dirname "$f")
+  base=$(basename "$f")
+  new_base="${base//opencode/chadcode}"
+  new_base="${new_base//OpenCode/ChadCode}"
+  new_base="${new_base//OPENCODE/CHADCODE}"
+  if [[ "$base" != "$new_base" ]]; then
+    mv "$f" "$dir/$new_base"
+  fi
 done
 
 echo "[3/6] rewrite file contents"
@@ -86,18 +98,33 @@ EOF
 echo "[5/6] wire the CLI entrypoint into @chadcode/license"
 CLI_ENTRY="packages/cli/src/index.ts"
 if [[ -f "$CLI_ENTRY" ]]; then
-  # Prepend the license bootstrap. If the file imports happen after top-level
-  # code, that's fine — the bootstrap runs as the first top-level await.
+  # Insert the license bootstrap AFTER the shebang (shebangs must be line 1).
   tmpfile=$(mktemp)
-  cat > "$tmpfile" <<'EOF'
+  first=$(head -n1 "$CLI_ENTRY")
+  if [[ "$first" == "#!"* ]]; then
+    echo "$first" > "$tmpfile"
+    cat >> "$tmpfile" <<'EOF'
 import { bootstrap } from '@chadcode/license';
 await bootstrap({
   licenseServer: process.env.CHADCODE_LICENSE_SERVER || 'https://chadcode-license.corbyiscool.workers.dev',
   version: process.env.CHADCODE_VERSION || '0.0.0',
   binary: process.execPath,
+  skipLicense: process.env.CHADCODE_SKIP_LICENSE === '1',
 });
 EOF
-  cat "$CLI_ENTRY" >> "$tmpfile"
+    tail -n+2 "$CLI_ENTRY" >> "$tmpfile"
+  else
+    cat > "$tmpfile" <<'EOF'
+import { bootstrap } from '@chadcode/license';
+await bootstrap({
+  licenseServer: process.env.CHADCODE_LICENSE_SERVER || 'https://chadcode-license.corbyiscool.workers.dev',
+  version: process.env.CHADCODE_VERSION || '0.0.0',
+  binary: process.execPath,
+  skipLicense: process.env.CHADCODE_SKIP_LICENSE === '1',
+});
+EOF
+    cat "$CLI_ENTRY" >> "$tmpfile"
+  fi
   mv "$tmpfile" "$CLI_ENTRY"
   echo "  -> injected bootstrap into $CLI_ENTRY"
 else
