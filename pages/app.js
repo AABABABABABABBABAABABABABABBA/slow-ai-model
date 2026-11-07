@@ -91,9 +91,9 @@ function showAuthGate(initialMode = 'login') {
       </div>
       <form class="gate_form" id="auth_form" novalidate>
         <label class="gate_label" for="auth_email">Email</label>
-        <input class="gate_input" type="email" id="auth_email" placeholder="you@example.com" required autocomplete="email" autocapitalize="none" inputmode="email" spellcheck="false">
+        <input class="gate_input" type="email" id="auth_email" required autocomplete="email" autocapitalize="none" inputmode="email" spellcheck="false">
         <label class="gate_label" for="auth_password">Password</label>
-        <input class="gate_input" type="password" id="auth_password" placeholder="min 8 characters" required minlength="8">
+        <input class="gate_input" type="password" id="auth_password" required minlength="8">
         <button type="submit" class="gate_submit" id="auth_submit"><span class="label">Log in</span></button>
         <div class="gate_err" id="auth_err" role="alert" aria-live="polite"></div>
       </form>
@@ -120,7 +120,6 @@ function showAuthGate(initialMode = 'login') {
     tabs.forEach(t => t.classList.toggle('active', t.getAttribute('data-tab') === mode));
     submitLabel.textContent = mode === 'signup' ? 'Create account' : 'Log in';
     pwInput.autocomplete = mode === 'signup' ? 'new-password' : 'current-password';
-    pwInput.placeholder = mode === 'signup' ? 'min 8 characters' : 'your password';
   }
   tabs.forEach(t => t.addEventListener('click', () => {
     mode = t.getAttribute('data-tab');
