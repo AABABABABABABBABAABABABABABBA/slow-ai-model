@@ -1,0 +1,22 @@
+name = "chadcode-license"
+main = "src/index.js"
+compatibility_date = "2024-12-01"
+
+# D1 binding: `wrangler d1 create chadcode-license` and paste the id below.
+[[d1_databases]]
+binding = "LIC_DB"
+database_name = "chadcode-license"
+database_id = "aa6f6d71-91b3-4820-8c7c-539209804d53"
+
+# KV for channel config + feature flags.
+[[kv_namespaces]]
+binding = "LIC_KV"
+id = "f91061afca3247d0aa94c4fd71ea6c1b"
+
+# Secrets to set via `wrangler secret put`:
+#   FOUNDER_TOKEN  — bearer for /license/revoke + /update/publish
+#   TOKEN_SECRET   — HMAC secret used to sign offline verification tokens
+#
+# The update signing keypair (ed25519) is stored OFFLINE on the founder's
+# machine — only the public key ships in the client. The worker stores the
+# signature at publish time; it never sees the private key.
