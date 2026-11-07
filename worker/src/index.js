@@ -16,6 +16,8 @@ Non-coding questions: answer normally and keep responses tight.
 Hard rules you never cross: no CSAM, no sexual content involving minors, no pornographic content.`;
 
 const MODEL = '@cf/qwen/qwen2.5-coder-32b-instruct';
+const IMAGE_MODEL = '@cf/black-forest-labs/flux-1-schnell';
+const VISION_MODEL = '@cf/meta/llama-3.2-11b-vision-instruct';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -42,23 +44,88 @@ export default {
     if (url.pathname === '/' || url.pathname === '/health') {
       return json({
         service: 'chadcoder',
-        model: MODEL,
-        endpoints: ['POST /chat', 'POST /complete', 'GET /health'],
+        text_model: MODEL,
+        image_model: IMAGE_MODEL,
+        vision_model: VISION_MODEL,
+        endpoints: [
+          'POST /chat        - code chat, SSE stream',
+          'POST /complete    - one-shot code completion',
+          'POST /image       - photorealistic image generation (Flux schnell), returns PNG',
+          'POST /describe    - vision: describe/analyze an uploaded image',
+          'GET  /health',
+        ],
         edge: request.cf?.colo || 'unknown',
       });
     }
 
-    if (url.pathname === '/chat' && request.method === 'POST') {
-      return handleChat(request, env);
-    }
-
-    if (url.pathname === '/complete' && request.method === 'POST') {
-      return handleComplete(request, env);
-    }
+    if (url.pathname === '/chat' && request.method === 'POST') return handleChat(request, env);
+    if (url.pathname === '/complete' && request.method === 'POST') return handleComplete(request, env);
+    if (url.pathname === '/image' && request.method === 'POST') return handleImage(request, env);
+    if (url.pathname === '/describe' && request.method === 'POST') return handleDescribe(request, env);
 
     return json({ error: 'Not found' }, { status: 404 });
   },
 };
+
+async function handleImage(request, env) {
+  let body;
+  try { body = await request.json(); } catch (e) { return json({ error: 'Invalid JSON' }, { status: 400 }); }
+  const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
+  if (!prompt) return json({ error: 'prompt required' }, { status: 400 });
+
+  const steps = Math.min(Math.max(body.steps || 4, 1), 8);
+
+  const result = await env.AI.run(IMAGE_MODEL, {
+    prompt,
+    steps,
+  });
+
+  // Flux returns { image: <base64 png string> }
+  if (result && typeof result.image === 'string') {
+    const bin = Uint8Array.from(atob(result.image), c => c.charCodeAt(0));
+    return new Response(bin, {
+      headers: {
+        'Content-Type': 'image/png',
+        'Cache-Control': 'public, max-age=3600',
+        ...CORS,
+      },
+    });
+  }
+  // Older models return a raw ReadableStream of PNG bytes
+  return new Response(result, {
+    headers: { 'Content-Type': 'image/png', ...CORS },
+  });
+}
+
+async function handleDescribe(request, env) {
+  const contentType = request.headers.get('content-type') || '';
+  let imageBytes = null;
+  let prompt = 'Describe this image in detail.';
+
+  if (contentType.startsWith('multipart/form-data')) {
+    const form = await request.formData();
+    const file = form.get('image');
+    if (!(file instanceof File)) return json({ error: 'image file required' }, { status: 400 });
+    imageBytes = new Uint8Array(await file.arrayBuffer());
+    const p = form.get('prompt');
+    if (typeof p === 'string' && p.trim()) prompt = p.trim();
+  } else if (contentType.startsWith('application/json')) {
+    const body = await request.json();
+    if (typeof body.image_b64 !== 'string') return json({ error: 'image_b64 required' }, { status: 400 });
+    imageBytes = Uint8Array.from(atob(body.image_b64), c => c.charCodeAt(0));
+    if (typeof body.prompt === 'string' && body.prompt.trim()) prompt = body.prompt.trim();
+  } else {
+    return json({ error: 'send multipart with "image" file or JSON with image_b64' }, { status: 400 });
+  }
+
+  const result = await env.AI.run(VISION_MODEL, {
+    image: [...imageBytes],
+    prompt,
+    max_tokens: 512,
+  });
+
+  return json({ response: result.description || result.response || result, model: VISION_MODEL });
+}
 
 async function handleChat(request, env) {
   let body;

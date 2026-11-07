@@ -813,6 +813,50 @@
     flex-direction: column;
     gap: 2px;
   }
+  .attach_strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 4px 10px 6px;
+  }
+  .attach_thumb {
+    position: relative;
+    width: 56px; height: 56px;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .attach_thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .attach_thumb .x {
+    position: absolute;
+    top: 2px; right: 2px;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.7);
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+  .attach_thumb .x svg { width: 11px; height: 11px; }
+  .msg_attachments {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+  }
+  .msg_attachments img {
+    max-width: 180px;
+    max-height: 180px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    object-fit: cover;
+    display: block;
+  }
   .composer textarea {
     background: transparent;
     color: var(--fg);
@@ -1362,6 +1406,7 @@
   <footer>
     <div class="composer_wrap" id="composer_wrap">
       <div class="composer">
+        <div class="attach_strip" id="attach_strip" hidden></div>
         <textarea id="input" rows="1" placeholder="Ask anything, or type /" autocomplete="off"></textarea>
         <div class="composer_actions">
           <div class="composer_left">
@@ -1630,7 +1675,7 @@ Hard rules you never cross: no CSAM, no sexual content involving minors, no porn
       return;
     }
     history.forEach((m, i) => {
-      if (m.role === 'user') addUserMsgEl(m.content, i);
+      if (m.role === 'user') addUserMsgEl(m.content, i, m.images);
       else addBotMsgEl(m.content);
     });
     scrollDown();
@@ -1927,12 +1972,53 @@ Hard rules you never cross: no CSAM, no sexual content involving minors, no porn
       { title: 'Create image', icon: slashIcons.image, onClick: () => { input.value = '/image '; input.dispatchEvent(new Event('input')); input.focus(); } },
     ], { align: 'above' });
   });
+  const pendingAttachments = [];
+  const attachStrip = document.getElementById('attach_strip');
+
+  function renderAttachments() {
+    if (!pendingAttachments.length) {
+      attachStrip.hidden = true;
+      attachStrip.innerHTML = '';
+      sendBtn.disabled = !input.value.trim() || busy;
+      return;
+    }
+    attachStrip.hidden = false;
+    attachStrip.innerHTML = '';
+    sendBtn.disabled = busy;
+    pendingAttachments.forEach((att, i) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'attach_thumb';
+      wrap.innerHTML = `
+        <img alt="attachment" />
+        <button class="x" aria-label="remove"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/></svg></button>
+      `;
+      wrap.querySelector('img').src = att.dataUrl;
+      wrap.querySelector('.x').addEventListener('click', () => {
+        pendingAttachments.splice(i, 1);
+        renderAttachments();
+      });
+      attachStrip.appendChild(wrap);
+    });
+  }
+
   function pickFile() {
     const fi = document.createElement('input');
     fi.type = 'file';
-    fi.accept = 'image/*,.pdf,.txt,.md';
-    fi.addEventListener('change', () => {
-      if (fi.files[0]) toast({ title: `Attached "${fi.files[0].name}". Processing takes effect on your next message.` }, 3000, 'ok');
+    fi.accept = 'image/*';
+    fi.multiple = true;
+    fi.addEventListener('change', async () => {
+      const files = Array.from(fi.files || []);
+      for (const f of files) {
+        if (!f.type.startsWith('image/')) continue;
+        const dataUrl = await new Promise((resolve) => {
+          const r = new FileReader();
+          r.onload = () => resolve(r.result);
+          r.readAsDataURL(f);
+        });
+        pendingAttachments.push({ blob: f, dataUrl, name: f.name });
+      }
+      renderAttachments();
+      input.focus();
     });
     fi.click();
   }
@@ -2550,7 +2636,7 @@ Hard rules you never cross: no CSAM, no sexual content involving minors, no porn
   input.addEventListener('input', () => {
     input.style.height = 'auto';
     input.style.height = Math.min(input.scrollHeight, 180) + 'px';
-    sendBtn.disabled = !input.value.trim() || busy;
+    sendBtn.disabled = (!input.value.trim() && !pendingAttachments.length) || busy;
     const v = input.value;
     if (v.startsWith('/')) {
       const firstWord = v.split(' ')[0];
@@ -2593,11 +2679,14 @@ Hard rules you never cross: no CSAM, no sexual content involving minors, no porn
 
   function submit() {
     const text = input.value.trim();
-    if (!text || busy) return;
+    if ((!text && !pendingAttachments.length) || busy) return;
     input.value = '';
     input.style.height = 'auto';
     sendBtn.disabled = true;
     if (welcome.parentNode) welcome.remove();
+    const attachments = pendingAttachments.slice();
+    pendingAttachments.length = 0;
+    renderAttachments();
     if (/^\/image(\s|$)/i.test(text)) {
       const prompt = text.replace(/^\/image\s*/i, '').trim();
       if (!prompt) {
@@ -2605,10 +2694,10 @@ Hard rules you never cross: no CSAM, no sexual content involving minors, no porn
         sendBtn.disabled = false;
         return;
       }
-      runImageTurn(prompt);
+      runImageTurn(prompt, attachments);
       return;
     }
-    runTurn(text);
+    runTurn(text || 'Describe this image.', attachments);
   }
 
   function ensureChat(firstUserText) {
@@ -2622,19 +2711,32 @@ Hard rules you never cross: no CSAM, no sexual content involving minors, no porn
     state.activeChat = chat.id;
   }
 
-  function addUserMsgEl(text, index) {
+  function addUserMsgEl(text, index, images) {
     const row = document.createElement('div');
     row.className = 'msg_row user';
+    const col = document.createElement('div');
+    col.style.cssText = 'display:flex;flex-direction:column;align-items:flex-end;gap:0;max-width:85%';
+    if (images && images.length) {
+      const attWrap = document.createElement('div');
+      attWrap.className = 'msg_attachments';
+      images.forEach(src => {
+        const im = document.createElement('img');
+        im.src = src;
+        attWrap.appendChild(im);
+      });
+      col.appendChild(attWrap);
+    }
     const bubble = document.createElement('div');
     bubble.className = 'bubble';
     bubble.textContent = text;
+    col.appendChild(bubble);
     const edit = document.createElement('button');
     edit.className = 'user_edit';
     edit.setAttribute('aria-label', 'edit');
     edit.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4v16h16v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
     edit.addEventListener('click', () => beginEditUserMessage(row, index, text));
     row.appendChild(edit);
-    row.appendChild(bubble);
+    row.appendChild(col);
     inner.appendChild(row);
     scrollDown();
     return row;
@@ -2738,17 +2840,32 @@ Hard rules you never cross: no CSAM, no sexual content involving minors, no porn
     return msgs;
   }
 
-  const IMAGE_SYSTEM_PROMPT = `You are an SVG illustrator. The user gives you a visual prompt. You respond with ONLY valid SVG XML, nothing else. No markdown fences, no explanation, no words before or after.
+  const IMAGE_SYSTEM_PROMPT = `You are a senior illustrator producing dense, polished SVG artwork. The user gives you a visual prompt. You respond with ONLY valid SVG XML, nothing else. No markdown fences, no explanation, no words before or after.
 
-Rules for the SVG:
-- Start with <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400"> and end with </svg>
-- Fill the full 400x400 viewBox. Don't leave the background blank — paint one.
-- Use multiple shapes, gradients (<linearGradient>, <radialGradient>), and opacity for depth.
-- Use <defs> for gradients and patterns.
-- Prefer path, circle, ellipse, polygon, rect. Avoid <text> unless the prompt asks for text.
-- NEVER include <script>, <foreignObject>, event handlers (onload, onclick, etc.), external hrefs, or <image href=...>.
-- Make it visually interesting and recognizable for the prompt. Think illustrator poster, not stick figure.
-- Keep under 12 KB of XML.`;
+Output format:
+- Start with <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800"> and end with </svg>. Use 800x800 so you can commit to detail.
+- Keep the whole file under 60 KB.
+
+Composition rules — this is the difference between amateur and professional output:
+- Always paint a full background first. Sky with gradient, ground, room walls, whatever fits. Never leave white.
+- Use at least 25-60 drawn elements. Thin, cheap scenes read as AI slop. Dense scenes read as intentional art.
+- Use <defs> with multiple <linearGradient> and <radialGradient> stops for color depth. Flat fills look amateur; gradients give form.
+- Use layering: background, midground, subject, foreground detail. Overlap elements. Add occluding shapes to sell depth.
+- Light direction matters. Pick one and commit: highlights on one side, shadows on the other. Add cast shadows as dark ellipses with low opacity.
+- Add texture: cross-hatching with thin <line> or <path> sets at low opacity, dithered dots, stippling.
+- For organic subjects use <path> with Bezier curves (C, Q), not polygons. Nature isn't straight.
+- For skies and backgrounds use large gradient rects, soft radial gradients for sun/moon, scatter small shapes for stars/clouds/birds.
+- Color palette: pick 4-6 colors that work together (analogous or complementary). Avoid pure primary colors unless the style calls for it. Add subtle color variation within fills via gradient stops.
+- Rim lighting, atmospheric perspective (distant things lighter and bluer), and subtle noise (small scattered dots at low opacity) all help a lot.
+
+Style:
+- Default to a polished digital illustration style (think editorial illustration, children's book, concept art, poster), NOT a flat vector sticker.
+- If the prompt specifies a style ("minimal", "noir", "watercolor", "pixel", "line art", "lowpoly"), commit to it fully.
+
+Safety:
+- NEVER include <script>, <foreignObject>, event handlers (on*), external hrefs, <image href=...>, or xlink:href pointing out.
+
+Return the SVG only.`;
 
   function sanitizeSvg(svg) {
     if (!svg) return '';
@@ -2768,18 +2885,19 @@ Rules for the SVG:
     return m ? m[0] : null;
   }
 
-  async function runImageTurn(prompt) {
+  async function runImageTurn(prompt, attachments) {
     busy = true;
     setSendMode('stop');
     ensureChat('/image ' + prompt);
 
     const userIdx = history.length;
-    history.push({ role: 'user', content: '/image ' + prompt });
+    const imageUrls = (attachments || []).map(a => a.dataUrl);
+    history.push({ role: 'user', content: '/image ' + prompt, images: imageUrls.length ? imageUrls : undefined });
     if (activeChatObj) {
       activeChatObj.messages = history.slice();
       saveState();
     }
-    addUserMsgEl('/image ' + prompt, userIdx);
+    addUserMsgEl('/image ' + prompt, userIdx, imageUrls);
 
     const botRow = document.createElement('div');
     botRow.className = 'msg_row bot';
@@ -2855,9 +2973,10 @@ Rules for the SVG:
       errorMsg = 'Edge inference offline. Image generation unavailable.';
     } else {
       try {
-        const result = await claudeSample([
-          { role: 'user', content: IMAGE_SYSTEM_PROMPT + '\n\n---\n\nPrompt: ' + prompt }
-        ], {
+        const refNote = (attachments && attachments.length)
+          ? '\n\nThe user attached reference image(s). Draw from them: match their composition, palette, lighting, or subject as the prompt suggests. This is style/reference input, not a watermark to copy.'
+          : '';
+        const opts = {
           modelTier: 'complex',
           signal: currentAbort.signal,
           onText: ({ text }) => {
@@ -2867,7 +2986,16 @@ Rules for the SVG:
               statusEl.textContent = sketchStages[1];
             }
           },
-        });
+        };
+        if (attachments && attachments.length) {
+          try {
+            const limits = await claudeSample.limits();
+            if (limits && limits.images) opts.images = attachments.map(a => a.blob);
+          } catch (_) {}
+        }
+        const result = await claudeSample([
+          { role: 'user', content: IMAGE_SYSTEM_PROMPT + refNote + '\n\n---\n\nPrompt: ' + prompt }
+        ], opts);
         const raw = (result && result.text) || '';
         svg = sanitizeSvg(extractSvg(raw));
         if (!svg) errorMsg = 'Could not render that prompt. Try again with a different description.';
@@ -2985,18 +3113,19 @@ Rules for the SVG:
     }
   }
 
-  async function runTurn(userText) {
+  async function runTurn(userText, attachments) {
     busy = true;
     setSendMode('stop');
     ensureChat(userText);
 
     const userIdx = history.length;
-    history.push({ role: 'user', content: userText });
+    const imageUrls = (attachments || []).map(a => a.dataUrl);
+    history.push({ role: 'user', content: userText, images: imageUrls.length ? imageUrls : undefined });
     if (activeChatObj) {
       activeChatObj.messages = history.slice();
       saveState();
     }
-    addUserMsgEl(userText, userIdx);
+    addUserMsgEl(userText, userIdx, imageUrls);
 
     const botRow = document.createElement('div');
     botRow.className = 'msg_row bot';
@@ -3032,7 +3161,7 @@ Rules for the SVG:
       errorText = "Edge inference is offline. The sample capability was not granted.";
     } else {
       try {
-        result = await claudeSample(buildPrompt(), {
+        const opts = {
           modelTier: state.model === 'o1' || state.model === 'gpt4' ? 'default' : 'quick',
           signal: currentAbort.signal,
           onText: ({ text }) => {
@@ -3041,7 +3170,18 @@ Rules for the SVG:
             botBody.innerHTML = withCursor;
             scrollDown();
           },
-        });
+        };
+        if (attachments && attachments.length) {
+          try {
+            const limits = await claudeSample.limits();
+            if (limits && limits.images) {
+              opts.images = attachments.map(a => a.blob);
+            } else {
+              toast({ title: 'Image input not supported in this view.' }, 2500);
+            }
+          } catch (_) {}
+        }
+        result = await claudeSample(buildPrompt(), opts);
       } catch (e) {
         if (e && e.code === 'aborted') {
           errorText = null;

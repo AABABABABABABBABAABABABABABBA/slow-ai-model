@@ -4,9 +4,11 @@ Cloudflare Worker that serves ChadCoder on Workers AI using `@cf/qwen/qwen2.5-co
 
 ## Endpoints
 
-- `GET /health` — health check with model info and edge colo
-- `POST /chat` — body `{ messages: [{role, content}], stream?, temperature?, max_tokens? }`, SSE by default, system prompt prepended server side
+- `GET  /health` — model info and edge colo
+- `POST /chat` — body `{ messages, stream?, temperature?, max_tokens? }`, SSE by default, ChadCoder system prompt prepended
 - `POST /complete` — body `{ prompt, stream?, temperature?, max_tokens? }`, single-turn convenience
+- `POST /image` — body `{ prompt, steps? }`, returns a **PNG** rendered by Flux schnell (`@cf/black-forest-labs/flux-1-schnell`). This is the real photorealistic image gen the artifact UI can't do directly.
+- `POST /describe` — vision: upload an image and get a description. Accepts `multipart/form-data` with `image` file and optional `prompt`, OR JSON `{ image_b64, prompt? }`. Uses `@cf/meta/llama-3.2-11b-vision-instruct`.
 
 ## Deploy
 
@@ -43,10 +45,26 @@ custom_domain = true
 
 Then `npx wrangler deploy` again.
 
-## Example
+## Examples
 
+Code chat:
 ```bash
-curl -N https://chadcoder.<your-subdomain>.workers.dev/chat \
+curl -N https://chadcoder.<sub>.workers.dev/chat \
   -H 'content-type: application/json' \
   -d '{"messages":[{"role":"user","content":"write a debounce in js"}]}'
+```
+
+Photorealistic image:
+```bash
+curl -X POST https://chadcoder.<sub>.workers.dev/image \
+  -H 'content-type: application/json' \
+  -d '{"prompt":"a shiba inu sitting on a bench at sunset, cinematic, 50mm"}' \
+  --output dog.png
+```
+
+Describe an image:
+```bash
+curl -X POST https://chadcoder.<sub>.workers.dev/describe \
+  -F image=@photo.jpg \
+  -F prompt="what is this and where could it be"
 ```
