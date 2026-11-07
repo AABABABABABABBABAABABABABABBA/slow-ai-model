@@ -56,6 +56,11 @@
       <button class="container_badge" id="container_badge">
         <span class="cdot"></span>CTR<span class="cuptime" id="container_uptime">00:00</span>
       </button>
+      <button class="usage_badge" id="usage_badge" title="Daily usage — spam drops it faster">
+        <span class="plus_tag" id="plus_tag" hidden>PLUS</span>
+        <div class="usage_bar"><div class="usage_bar_fill" id="usage_fill" style="width:100%"></div></div>
+        <span class="u_num" id="usage_num">100</span>
+      </button>
     </div>
     <div class="header_right">
       <button class="pill_btn" id="settings_btn" aria-label="settings">
@@ -101,6 +106,7 @@
           </div>
         </div>
       </div>
+      <div class="chat_meter" id="chat_meter" hidden>0 / 10,000 tokens in this chat</div>
       <div class="footnote">
         <span>ChadGPT · running on Cloudflare Workers AI</span>
       </div>

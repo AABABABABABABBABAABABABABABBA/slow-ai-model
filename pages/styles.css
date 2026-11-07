@@ -134,6 +134,45 @@ header {
 .container_badge .cuptime { color: var(--muted); font-size: 11px; }
 @keyframes breathe { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
 
+.usage_badge {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px;
+  border-radius: 999px; font-size: 12px; font-family: var(--mono);
+  white-space: nowrap; border: 1px solid var(--border); background: transparent;
+  cursor: pointer;
+}
+.usage_bar { width: 46px; height: 6px; border-radius: 3px; background: var(--border); position: relative; overflow: hidden; }
+.usage_bar_fill { height: 100%; background: var(--ok); transition: width 0.3s, background 0.3s; }
+.usage_badge .u_num { color: var(--muted); font-size: 11px; }
+.usage_badge.low .usage_bar_fill { background: #f0b429; }
+.usage_badge.crit .usage_bar_fill { background: var(--danger); }
+.usage_badge.plus { background: color-mix(in srgb, #9b6bd8 15%, transparent); border-color: color-mix(in srgb, #9b6bd8 45%, transparent); }
+.usage_badge.plus .plus_tag { color: #9b6bd8; font-weight: 700; font-size: 10px; letter-spacing: 0.08em; }
+
+.chat_meter {
+  position: sticky; bottom: 0; background: transparent;
+  text-align: center; font-size: 11px; color: var(--muted); font-family: var(--mono);
+  padding: 2px 0;
+}
+.chat_meter.near { color: #f0b429; }
+.chat_meter.full { color: var(--danger); font-weight: 600; }
+
+.paywall {
+  display: flex; flex-direction: column; gap: 16px;
+}
+.paywall .plans { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.paywall .plan_card {
+  border: 1px solid var(--border); border-radius: 14px; padding: 18px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.paywall .plan_card.featured { border: 2px solid #9b6bd8; }
+.paywall .plan_card h4 { margin: 0; font-size: 18px; font-weight: 600; }
+.paywall .plan_card .price { font-size: 24px; font-weight: 700; margin: 4px 0; }
+.paywall .plan_card .price small { font-size: 12px; font-weight: 400; color: var(--muted); }
+.paywall .plan_card ul { margin: 8px 0 0; padding-left: 18px; font-size: 13px; line-height: 1.7; }
+.paywall .plan_card button { margin-top: 12px; }
+.paywall .featured button { background: #9b6bd8; }
+@media (max-width: 500px) { .paywall .plans { grid-template-columns: 1fr; } }
+
 .header_right { display: inline-flex; align-items: center; gap: 4px; }
 .pill_btn {
   display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px;
@@ -151,13 +190,24 @@ header {
 .icon_btn svg { width: 20px; height: 20px; }
 .hamburger { display: none; }
 
-main { flex: 1; overflow-y: auto; min-width: 0; padding: 0 16px; }
+main {
+  flex: 1; overflow-y: auto; min-width: 0;
+  padding: 0 16px;
+  display: flex; justify-content: center;
+}
 .inner {
   max-width: 768px; width: 100%; margin: 0 auto; padding: 24px 0 32px;
   display: flex; flex-direction: column; gap: 24px; min-width: 0;
 }
+.inner.empty { justify-content: center; }
 
-.welcome { text-align: center; padding: 60px 0 20px; }
+.welcome {
+  text-align: center;
+  padding: 40px 0 20px;
+  display: flex; flex-direction: column; align-items: center;
+  width: 100%;
+}
+.welcome > * { margin-left: auto; margin-right: auto; }
 .welcome_badge {
   display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px;
   background: color-mix(in srgb, var(--cf_orange) 12%, transparent);

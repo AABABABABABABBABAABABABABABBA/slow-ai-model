@@ -104,22 +104,88 @@ const defaultState = {
   theme: 'system',
   chats: [],
   activeChat: null,
+  plan: 'free',   // 'free' | 'plus'
+  usage: { score: 100, lastAt: Date.now() },
   settings: { chadMode: true, blockJailbreak: true, temperature: 0.6, autoScroll: true },
 };
 function loadState() {
   try {
-    const raw = localStorage.getItem('chadgpt_state_v2');
+    const raw = localStorage.getItem('chadgpt_state_v3');
     if (raw) {
       const saved = JSON.parse(raw);
       const merged = Object.assign({}, defaultState, saved);
       merged.settings = Object.assign({}, defaultState.settings, saved.settings || {});
+      merged.usage = Object.assign({}, defaultState.usage, saved.usage || {});
       return merged;
     }
   } catch (e) {}
   return JSON.parse(JSON.stringify(defaultState));
 }
-function saveState() { try { localStorage.setItem('chadgpt_state_v2', JSON.stringify(state)); } catch (e) {} }
+function saveState() { try { localStorage.setItem('chadgpt_state_v3', JSON.stringify(state)); } catch (e) {} }
 let state = loadState();
+
+// ---------- plan + usage + budget ----------
+const USAGE_MAX = 100;
+const USAGE_REGEN_PER_MIN = 2;       // full regen ~50 min idle
+const USAGE_PER_1K_TOKENS = 3;       // ~33k tokens from full tank
+const SPAM_MULTIPLIER = 4;           // duplicate messages cost 4x
+const CHAT_TOKEN_BUDGET = 10000;     // per chat, forces new chat when exceeded
+const CHAT_WARN_AT = 0.8;            // start warning at 80%
+const PLUS_USAGE_MULTIPLIER = 0.4;   // Plus burns slower
+
+function regenUsage() {
+  const now = Date.now();
+  const mins = (now - (state.usage.lastAt || now)) / 60000;
+  state.usage.score = Math.min(USAGE_MAX, (state.usage.score || USAGE_MAX) + mins * USAGE_REGEN_PER_MIN);
+  state.usage.lastAt = now;
+}
+function estimateTokens(s) { return Math.ceil((s || '').length / 4); }
+function isDuplicateMessage(text) {
+  if (!text || !activeChatObj) return false;
+  const recent = (activeChatObj.messages || []).filter(m => m.role === 'user').slice(-3);
+  const norm = text.trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 200);
+  return recent.some(m => (m.content || '').trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 200) === norm);
+}
+function deductUsage(tokens, isSpam) {
+  regenUsage();
+  const planMult = state.plan === 'plus' ? PLUS_USAGE_MULTIPLIER : 1;
+  const base = (tokens / 1000) * USAGE_PER_1K_TOKENS * planMult;
+  const total = (isSpam ? base * SPAM_MULTIPLIER : base);
+  state.usage.score = Math.max(0, state.usage.score - total);
+  saveState();
+  renderUsageBadge();
+}
+function chatTokens() {
+  if (!activeChatObj) return 0;
+  return (activeChatObj.messages || []).reduce((n, m) => n + estimateTokens(m.content), 0);
+}
+
+function renderUsageBadge() {
+  const badge = document.getElementById('usage_badge');
+  const fill = document.getElementById('usage_fill');
+  const num = document.getElementById('usage_num');
+  const plusTag = document.getElementById('plus_tag');
+  const s = Math.round(state.usage.score);
+  fill.style.width = s + '%';
+  num.textContent = String(s);
+  badge.classList.toggle('low', s < 30 && s >= 10);
+  badge.classList.toggle('crit', s < 10);
+  badge.classList.toggle('plus', state.plan === 'plus');
+  plusTag.hidden = state.plan !== 'plus';
+}
+function renderChatMeter() {
+  const meter = document.getElementById('chat_meter');
+  const used = chatTokens();
+  if (!activeChatObj || used === 0) { meter.hidden = true; return; }
+  meter.hidden = false;
+  meter.textContent = `${used.toLocaleString()} / ${CHAT_TOKEN_BUDGET.toLocaleString()} tokens in this chat`;
+  const pct = used / CHAT_TOKEN_BUDGET;
+  meter.classList.toggle('near', pct >= CHAT_WARN_AT && pct < 1);
+  meter.classList.toggle('full', pct >= 1);
+}
+
+// Regen tick every 15s
+setInterval(() => { regenUsage(); renderUsageBadge(); saveState(); }, 15000);
 
 // ---------- models ----------------------
 const MODELS = [
@@ -202,11 +268,19 @@ function ensureChat(firstUserText) {
 }
 function renderConversation() {
   inner.innerHTML = '';
-  if (!history.length) { inner.appendChild(welcome); welcome.hidden = false; return; }
+  if (!history.length) {
+    inner.classList.add('empty');
+    inner.appendChild(welcome);
+    welcome.hidden = false;
+    renderChatMeter();
+    return;
+  }
+  inner.classList.remove('empty');
   history.forEach((m, i) => {
     if (m.role === 'user') addUserMsgEl(m.content, i, m.images);
-    else addBotMsgEl(m.content);
+    else addBotMsgEl(m.content, m.imageUrl);
   });
+  renderChatMeter();
   scrollDown();
 }
 function groupChats() {
@@ -343,10 +417,39 @@ document.querySelectorAll('.chip').forEach(b => b.addEventListener('click', () =
 function submit() {
   const text = input.value.trim();
   if ((!text && !pendingAttachments.length) || busy) return;
+
+  // Jailbreak gate
   if (state.settings.blockJailbreak) {
     const hit = looksLikeJailbreak(text);
     if (hit) { toast({ title: `Blocked: jailbreak-like text ("${hit.slice(0,60)}"). Settings → disable to override.` }, 5500, 'err'); return; }
   }
+
+  // Usage gate
+  regenUsage();
+  if (state.usage.score < 1) {
+    openUsageEmptyModal();
+    return;
+  }
+
+  // Chat budget gate
+  if (chatTokens() >= CHAT_TOKEN_BUDGET) {
+    openChatFullModal();
+    return;
+  }
+
+  // Image paywall
+  if (/^\/image\s+/i.test(text)) {
+    if (state.plan !== 'plus') {
+      openPaywallModal('Image generation is a Plus feature');
+      return;
+    }
+  }
+
+  const isDupe = isDuplicateMessage(text);
+  if (isDupe) {
+    toast({ title: 'Duplicate message — this will cost 4× more usage.' }, 3500, 'err');
+  }
+
   input.value = '';
   input.style.height = 'auto';
   if (welcome.parentNode) welcome.remove();
@@ -354,10 +457,10 @@ function submit() {
   pendingAttachments.length = 0;
   renderAttachments();
   if (/^\/image\s+/i.test(text)) {
-    runImageTurn(text.replace(/^\/image\s+/i, ''));
+    runImageTurn(text.replace(/^\/image\s+/i, ''), { isDupe });
     return;
   }
-  runChatTurn(text || 'Describe this image.', atts);
+  runChatTurn(text || 'Describe this image.', atts, { isDupe });
 }
 
 // ---------- SSE stream parser ----------
@@ -395,10 +498,11 @@ function setSendMode(mode) {
 function stopGeneration() { if (currentAbort) { try { currentAbort.abort(); } catch {} currentAbort = null; } }
 
 // ---------- chat turn -------------------
-async function runChatTurn(userText, attachments) {
+async function runChatTurn(userText, attachments, opts) {
   busy = true;
   setSendMode('stop');
   ensureChat(userText);
+  const isDupe = !!(opts && opts.isDupe);
 
   // if there are image attachments, describe them first via image worker, prepend to user message
   let finalUserText = userText;
@@ -497,6 +601,11 @@ async function runChatTurn(userText, attachments) {
     }
   }
 
+  // Deduct usage based on real tokens produced
+  const spentTokens = estimateTokens(userText) + estimateTokens(finalText);
+  deductUsage(spentTokens, isDupe);
+  renderChatMeter();
+
   busy = false;
   setSendMode('send');
   input.focus();
@@ -532,10 +641,11 @@ function addMessageActions(container, text) {
 }
 
 // ---------- image turn ------------------
-async function runImageTurn(prompt) {
+async function runImageTurn(prompt, opts) {
   busy = true;
   setSendMode('stop');
   ensureChat('/image ' + prompt);
+  const isDupe = !!(opts && opts.isDupe);
   history.push({ role: 'user', content: '/image ' + prompt });
   if (activeChatObj) { activeChatObj.messages = history.slice(); saveState(); }
   addUserMsgEl('/image ' + prompt, history.length - 1, null);
@@ -588,6 +698,9 @@ async function runImageTurn(prompt) {
     if (activeChatObj) { activeChatObj.messages = history.slice(); saveState(); }
   }
   currentAbort = null;
+  // Image gen is heavier — bill it at 1500 tokens equivalent
+  deductUsage(1500, isDupe);
+  renderChatMeter();
   busy = false;
   setSendMode('send');
 }
@@ -784,12 +897,104 @@ updateModelPicker();
 
 profileBtn.addEventListener('click', () => {
   openPopover(profileBtn, [
+    { title: state.plan === 'plus' ? 'Manage plan (Plus)' : 'Upgrade to Plus', sub: state.plan === 'plus' ? '$20/mo · image gen enabled' : 'Images + 2.5× usage', onClick: () => openPaywallModal() },
     { title: 'Settings', onClick: openSettings },
     { title: 'Container details', onClick: openContainerModal },
     '-',
     { title: 'Clear all chats', onClick: () => { state.chats = []; saveState(); renderChatList(); setActiveChat(null); toast({ title: 'Cleared' }, 1500, 'ok'); } },
   ], 'right');
 });
+document.getElementById('usage_badge').addEventListener('click', () => {
+  openModal('Your usage', (p) => {
+    regenUsage(); renderUsageBadge(); saveState();
+    const s = Math.round(state.usage.score);
+    p.innerHTML = `
+      <div class="stats_grid">
+        <div class="stat_card"><div class="stat_label">Score</div><div class="stat_value">${s}/${USAGE_MAX}</div></div>
+        <div class="stat_card"><div class="stat_label">Plan</div><div class="stat_value" style="color:${state.plan==='plus'?'#9b6bd8':'var(--muted)'}">${state.plan.toUpperCase()}</div></div>
+        <div class="stat_card"><div class="stat_label">Regen</div><div class="stat_value">+${USAGE_REGEN_PER_MIN}/min</div></div>
+        <div class="stat_card"><div class="stat_label">Cost</div><div class="stat_value" style="font-size:14px">${USAGE_PER_1K_TOKENS} / 1k tokens${state.plan==='plus'?' × 0.4':''}</div></div>
+      </div>
+      <p style="font-size:13px;color:var(--muted);margin:6px 0">Usage drops as you chat. Duplicate messages cost <b style="color:var(--fg)">4× more</b>. Score regenerates ${USAGE_REGEN_PER_MIN} points per minute while you're idle. Starting a new chat does not reset it — but a new chat does reset the <b style="color:var(--fg)">${CHAT_TOKEN_BUDGET.toLocaleString()}-token</b> per-chat budget.</p>
+      <div class="setting_row"><div><div class="setting_label">Reset my usage</div><div class="setting_sub">Useful during testing</div></div><button class="btn_primary" id="rst">Reset to ${USAGE_MAX}</button></div>
+    `;
+    p.querySelector('#rst').addEventListener('click', () => {
+      state.usage = { score: USAGE_MAX, lastAt: Date.now() };
+      saveState(); renderUsageBadge(); closeModal();
+    });
+  });
+});
+
+function openPaywallModal(headline) {
+  openModal(headline || 'Upgrade your plan', (p) => {
+    p.innerHTML = `
+      <div class="paywall">
+        <div class="plans">
+          <div class="plan_card">
+            <h4>Free</h4>
+            <div class="price">$0<small> / month</small></div>
+            <ul>
+              <li>Unlimited chat (within usage score)</li>
+              <li>All chat and code models</li>
+              <li>100-point usage, regen 2/min</li>
+              <li>No image generation</li>
+            </ul>
+            <button class="btn_primary" style="background:transparent;color:var(--fg);border:1px solid var(--border);cursor:default">Current plan</button>
+          </div>
+          <div class="plan_card featured">
+            <h4>Plus</h4>
+            <div class="price">$20<small> / month</small></div>
+            <ul>
+              <li>Everything in Free</li>
+              <li><b>Image generation</b> via Flux on Cloudflare</li>
+              <li>Usage burns at 0.4× rate</li>
+              <li>Priority routing</li>
+            </ul>
+            <button class="btn_primary" id="buy_plus">${state.plan === 'plus' ? 'Downgrade to Free' : 'Upgrade to Plus'}</button>
+          </div>
+        </div>
+      </div>
+    `;
+    p.querySelector('#buy_plus').addEventListener('click', () => {
+      state.plan = state.plan === 'plus' ? 'free' : 'plus';
+      saveState(); renderUsageBadge();
+      toast({ title: state.plan === 'plus' ? 'Welcome to Plus.' : 'Switched to Free.' }, 2500, 'ok');
+      closeModal();
+    });
+  });
+}
+
+function openChatFullModal() {
+  openModal('This chat is full', (p) => {
+    const used = chatTokens();
+    p.innerHTML = `
+      <p style="font-size:14px;line-height:1.6;color:var(--fg);margin:0 0 10px">You've used <b>${used.toLocaleString()}</b> of the <b>${CHAT_TOKEN_BUDGET.toLocaleString()}</b> token budget for this chat.</p>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 16px">Start a fresh chat to keep going. Your usage score and plan carry over.</p>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn_primary" style="background:transparent;color:var(--fg);border:1px solid var(--border)" id="chat_full_cancel">Cancel</button>
+        <button class="btn_primary" id="chat_full_new">Start new chat</button>
+      </div>
+    `;
+    p.querySelector('#chat_full_cancel').addEventListener('click', closeModal);
+    p.querySelector('#chat_full_new').addEventListener('click', () => { closeModal(); newChat(); });
+  });
+}
+
+function openUsageEmptyModal() {
+  openModal('Usage cooling down', (p) => {
+    const regenMin = Math.ceil(1 / USAGE_REGEN_PER_MIN);
+    p.innerHTML = `
+      <p style="font-size:14px;line-height:1.6;margin:0 0 10px">Your usage score hit zero. Wait about ${regenMin} minute(s) for it to regen, or upgrade to Plus for 2.5× the budget.</p>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 16px">Tip: spamming the same message is what drained it fastest.</p>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn_primary" style="background:transparent;color:var(--fg);border:1px solid var(--border)" id="ue_cancel">Close</button>
+        <button class="btn_primary" id="ue_upgrade">Upgrade</button>
+      </div>
+    `;
+    p.querySelector('#ue_cancel').addEventListener('click', closeModal);
+    p.querySelector('#ue_upgrade').addEventListener('click', () => { closeModal(); openPaywallModal(); });
+  });
+}
 settingsBtn.addEventListener('click', openSettings);
 
 function openChatMenu(anchor, chat) {
@@ -892,7 +1097,11 @@ function toast(obj, ms = 4000, variant) {
 
 function scrollDown() { if (!state.settings.autoScroll) return; requestAnimationFrame(() => mainEl.scrollTo({ top: mainEl.scrollHeight, behavior: 'smooth' })); }
 
-// ---------- init: start session ---------
+// ---------- init -----------------
+regenUsage();
+renderUsageBadge();
+renderChatMeter();
+
 (async () => {
   try {
     await ensureSession();
