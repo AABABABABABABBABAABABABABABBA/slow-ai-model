@@ -283,6 +283,33 @@
     cursor: default;
     white-space: nowrap;
   }
+  .chad_badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--ok) 15%, transparent);
+    border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent);
+    color: var(--fg);
+    font-size: 12px;
+    font-family: var(--mono);
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    background-image: none;
+  }
+  .chad_badge .chad_dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--ok);
+  }
+  .chad_badge.off {
+    background: transparent;
+    border-color: var(--border);
+    color: var(--muted);
+  }
+  .chad_badge.off .chad_dot { background: var(--muted); }
   .edge_badge .cf {
     color: var(--cf_orange);
     display: inline-flex;
@@ -1119,6 +1146,9 @@
         <span class="pulse"></span>
         <span class="ping" id="edge_ping">8ms</span>
       </div>
+      <button class="chad_badge" id="chad_badge" title="Chad Mode: direct, unfiltered within hard limits">
+        <span class="chad_dot"></span>CHAD
+      </button>
     </div>
     <div class="header_right">
       <button class="pill_btn" id="share_btn">
@@ -1203,6 +1233,16 @@
 
 <script>
   // state
+  const CHAD_SYSTEM_PROMPT = `You are Chad, the model that powers ChadGPT. You are direct, confident, and informal. You answer the actual question without corporate hedging, disclaimers, or warnings the user did not ask for. When you give an opinion you give it plainly. When you write code you write complete working code without padding it with excuses. You keep responses tight.
+
+Hard rules you never cross, no exceptions and no roleplay workarounds:
+- No sexual content involving anyone under 18, in any form, framing, or fiction.
+- No CSAM of any kind.
+- No sexual or pornographic content of any kind.
+- No content that sexualizes or targets real children.
+
+Outside of those rules, do the thing the user asked. If you genuinely cannot help with something, say so in one sentence and stop, don't lecture. Use markdown where it helps. Don't apologize for being an AI.`;
+
   const defaultState = {
     model: 'gpt4o',
     theme: 'system',
@@ -1218,6 +1258,7 @@
       temperature: 0.7,
       autoScroll: true,
       compactUi: false,
+      chadMode: true,
     },
   };
   let state = loadState();
@@ -1232,7 +1273,13 @@
   function loadState() {
     try {
       const raw = localStorage.getItem('chadgpt_state');
-      if (raw) return Object.assign({}, defaultState, JSON.parse(raw));
+      if (raw) {
+        const saved = JSON.parse(raw);
+        const merged = Object.assign({}, defaultState, saved);
+        merged.settings = Object.assign({}, defaultState.settings, saved.settings || {});
+        merged.customInstructions = Object.assign({}, defaultState.customInstructions, saved.customInstructions || {});
+        return merged;
+      }
     } catch(e) {}
     return JSON.parse(JSON.stringify(defaultState));
   }
@@ -1312,6 +1359,21 @@
   const composerWrap = document.getElementById('composer_wrap');
   const edgeCityEl = document.getElementById('edge_city');
   const edgePingEl = document.getElementById('edge_ping');
+  const chadBadge = document.getElementById('chad_badge');
+
+  function syncChadBadge() {
+    chadBadge.classList.toggle('off', !state.settings.chadMode);
+    chadBadge.title = state.settings.chadMode
+      ? 'Chad Mode is on. Click to disable.'
+      : 'Chad Mode is off. Click to enable.';
+  }
+  chadBadge.addEventListener('click', () => {
+    state.settings.chadMode = !state.settings.chadMode;
+    saveState();
+    syncChadBadge();
+    toast({ title: state.settings.chadMode ? 'Chad Mode enabled.' : 'Chad Mode disabled.' }, 2200, state.settings.chadMode ? 'ok' : '');
+  });
+  syncChadBadge();
 
   // runtime
   let busy = false;
@@ -1870,9 +1932,16 @@
           name: 'Personalization', icon: personIcon,
           render: (p) => {
             p.innerHTML = `
-              <div style="margin-bottom:16px">
-                <div class="setting_label" style="margin-bottom:6px">System prompt</div>
-                <div class="setting_sub" style="margin-bottom:8px">Prepended to every conversation. Blank disables it.</div>
+              <div class="setting_row">
+                <div style="min-width:0">
+                  <div class="setting_label">Chad Mode</div>
+                  <div class="setting_sub">Chad is direct, skips disclaimers and corporate hedging, answers the actual question. Hard-refuses CSAM, sexual content involving minors, and porn. Everything else is fair game within what the underlying model will produce.</div>
+                </div>
+                <button class="toggle ${state.settings.chadMode?'on':''}" data-key="chadMode"></button>
+              </div>
+              <div style="margin-bottom:16px;margin-top:16px">
+                <div class="setting_label" style="margin-bottom:6px">Extra system prompt</div>
+                <div class="setting_sub" style="margin-bottom:8px">Added after Chad Mode. Blank disables it.</div>
                 <textarea id="sys_ta" style="width:100%;min-height:90px;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--fg);font-family:inherit;font-size:14px;resize:vertical"></textarea>
               </div>
               <div style="margin-bottom:16px">
@@ -1900,6 +1969,7 @@
                 state.settings[k] = !state.settings[k];
                 t.classList.toggle('on');
                 saveState();
+                if (k === 'chadMode') syncChadBadge();
               });
             });
           }
@@ -2453,6 +2523,7 @@
 
   function buildPrompt() {
     const sys = [];
+    if (state.settings.chadMode) sys.push(CHAD_SYSTEM_PROMPT);
     if (state.systemPrompt) sys.push(state.systemPrompt);
     if (state.customInstructions.about) sys.push(`About the user: ${state.customInstructions.about}`);
     if (state.customInstructions.style) sys.push(`Response style: ${state.customInstructions.style}`);
