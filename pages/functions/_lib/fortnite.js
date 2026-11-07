@@ -43,26 +43,40 @@ async function fetchJson(url, timeoutMs = 6000) {
 function fmtSearch(name, d) {
   const items = (d?.data || []).slice(0, 5);
   if (!items.length) return '';
-  return `Fortnite cosmetics matching "${name}":\n` + items.map(it => {
+  const lines = items.map(it => {
     const type = it.type?.displayValue || 'item';
     const rarity = it.rarity?.displayValue || '';
     const intro = it.introduction?.text ? ` · intro ${it.introduction.text}` : '';
     const price = it.shopHistory?.length ? ` · last seen in shop ${it.shopHistory[it.shopHistory.length - 1].slice(0, 10)}` : '';
     const desc = it.description ? ` — ${it.description.slice(0, 180)}` : '';
-    return `- ${it.name} (${type}, ${rarity}${intro}${price})${desc}`;
+    const img = it.images?.featured || it.images?.icon;
+    const imgMd = img ? ` ![${it.name}](${img})` : '';
+    return `- ${it.name} (${type}, ${rarity}${intro}${price})${desc}${imgMd}`;
   }).join('\n');
+  const footer = '\nInclude the ![alt](url) image markdown verbatim in your reply so the user can see the cosmetic.';
+  return `Fortnite cosmetics matching "${name}":\n` + lines + footer;
 }
 
 function fmtShop(d) {
   const entries = d?.data?.entries || [];
   if (!entries.length) return '';
   const date = d?.data?.date?.slice(0, 10) || new Date().toISOString().slice(0, 10);
-  const lines = entries.slice(0, 20).map(e => {
-    const names = (e.brItems || e.items || []).map(i => i.name).filter(Boolean).join(' + ') || e.bundle?.name || 'bundle';
+  const lines = entries.slice(0, 15).map(e => {
+    const items = e.brItems || e.items || [];
+    const names = items.map(i => i.name).filter(Boolean).join(' + ') || e.bundle?.name || 'bundle';
     const price = e.finalPrice ?? e.regularPrice ?? '?';
-    return `- ${names} — ${price} V-Bucks`;
+    // Real artwork from Epic's CDN (via fortnite-api.com proxy)
+    const img =
+      e.newDisplayAsset?.materialInstances?.[0]?.images?.OfferImage ||
+      e.newDisplayAsset?.materialInstances?.[0]?.images?.Background ||
+      items[0]?.images?.featured ||
+      items[0]?.images?.icon ||
+      e.bundle?.image;
+    const imgMd = img ? ` ![${names}](${img})` : '';
+    return `- ${names} — ${price} V-Bucks${imgMd}`;
   });
-  return `Current Fortnite item shop (${date}):\n` + lines.join('\n');
+  const footer = '\n\nInclude the ![alt](url) image markdown verbatim in your reply so the user can see the shop artwork.';
+  return `Current Fortnite item shop (${date}):\n` + lines.join('\n') + footer;
 }
 
 function fmtNews(d) {
