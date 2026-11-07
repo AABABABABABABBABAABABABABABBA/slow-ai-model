@@ -1763,3 +1763,67 @@ renderChatMeter();
 })();
 
 input.focus();
+
+// ---------- PWA: service worker + install prompt ----------
+if ('serviceWorker' in navigator) {
+  // Register after load so the first paint isn't slowed by SW setup.
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
+
+// Android / Chrome install prompt. iOS Safari doesn't fire this event —
+// iOS users install via Share -> Add to Home Screen, and we show a one-time
+// hint for them below.
+let _deferredInstall = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  _deferredInstall = e;
+  showInstallChip();
+});
+window.addEventListener('appinstalled', () => {
+  _deferredInstall = null;
+  const chip = document.getElementById('install_chip'); if (chip) chip.remove();
+  try { localStorage.setItem('pwa_installed', '1'); } catch {}
+});
+
+function showInstallChip() {
+  if (document.getElementById('install_chip')) return;
+  const chip = document.createElement('button');
+  chip.id = 'install_chip';
+  chip.textContent = 'Install app';
+  chip.style.cssText = 'position:fixed;bottom:16px;right:16px;padding:10px 14px;border-radius:999px;border:none;background:linear-gradient(135deg,#4e2a8e,#8a4fd1);color:#fff;font-weight:600;font-size:13px;box-shadow:0 6px 20px rgba(138,79,209,.4);cursor:pointer;z-index:9999';
+  chip.addEventListener('click', async () => {
+    if (!_deferredInstall) { chip.remove(); return; }
+    _deferredInstall.prompt();
+    const r = await _deferredInstall.userChoice.catch(() => ({ outcome: 'dismissed' }));
+    _deferredInstall = null;
+    if (r.outcome === 'accepted') chip.remove();
+  });
+  document.body.appendChild(chip);
+}
+
+// iOS Safari "Add to Home Screen" hint — shown once, dismissable.
+(function showIosInstallHint() {
+  const ua = navigator.userAgent;
+  const isIos = /iPad|iPhone|iPod/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);
+  const alreadyStandalone = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+  if (!isIos || alreadyStandalone) return;
+  try { if (localStorage.getItem('ios_install_dismissed')) return; } catch {}
+
+  const hint = document.createElement('div');
+  hint.id = 'ios_install_hint';
+  hint.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v13"/><path d="M8 6l4-4 4 4"/><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/></svg>
+      <div style="flex:1;font-size:13px;line-height:1.4">Add ChadGPT to your home screen: tap <b>Share</b>, then <b>Add to Home Screen</b>.</div>
+      <button aria-label="dismiss" style="background:transparent;border:0;color:#fff;font-size:18px;cursor:pointer;padding:0 4px">&times;</button>
+    </div>
+  `;
+  hint.style.cssText = 'position:fixed;left:12px;right:12px;bottom:12px;padding:12px 14px;border-radius:12px;background:linear-gradient(135deg,#4e2a8e,#8a4fd1);color:#fff;box-shadow:0 8px 28px rgba(0,0,0,.35);z-index:9999';
+  hint.querySelector('button').addEventListener('click', () => {
+    hint.remove();
+    try { localStorage.setItem('ios_install_dismissed', '1'); } catch {}
+  });
+  document.body.appendChild(hint);
+})();
