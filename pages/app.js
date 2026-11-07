@@ -72,75 +72,103 @@ async function doUpgrade(targetPlan) {
 
 // ---------- login / signup gate ----------
 function showAuthGate(initialMode = 'login') {
-  // Hide the whole chat UI until the user signs in.
   document.body.classList.add('authed-off');
   const existing = document.querySelector('.gate');
   if (existing) existing.remove();
+
   const gate = document.createElement('div');
   gate.className = 'gate';
   gate.innerHTML = `
-    <div style="width:100%;max-width:360px;display:flex;flex-direction:column;gap:14px">
-      <div style="text-align:center">
-        <div style="font-size:30px;font-weight:700;letter-spacing:-0.02em;margin-bottom:4px">ChadGPT</div>
-        <div style="color:var(--muted);font-size:13px">Direct AI on Cloudflare — free to sign up</div>
+    <div class="gate_card">
+      <div class="gate_logo">
+        <div class="gate_mark">C</div>
+        <h2 class="gate_title">Welcome to ChadGPT</h2>
+        <p class="gate_sub">Direct AI on Cloudflare — free to sign up.</p>
       </div>
-      <div style="display:flex;gap:4px;padding:4px;background:var(--user_bubble);border-radius:12px">
-        <button class="auth_tab" data-tab="login" style="flex:1;padding:8px;border-radius:9px;border:none;background:transparent;color:var(--fg);cursor:pointer;font-family:inherit;font-weight:500">Log in</button>
-        <button class="auth_tab" data-tab="signup" style="flex:1;padding:8px;border-radius:9px;border:none;background:transparent;color:var(--fg);cursor:pointer;font-family:inherit;font-weight:500">Sign up</button>
+      <div class="gate_tabs" role="tablist">
+        <button type="button" class="gate_tab" data-tab="login" role="tab">Log in</button>
+        <button type="button" class="gate_tab" data-tab="signup" role="tab">Sign up</button>
       </div>
-      <form id="auth_form" style="display:flex;flex-direction:column;gap:10px" novalidate>
-        <input type="email" id="auth_email" placeholder="you@example.com" required autocomplete="email"
-          style="padding:12px 14px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--fg);font-family:inherit;font-size:15px;outline:none">
-        <input type="password" id="auth_password" placeholder="password (min 8 chars)" required autocomplete="current-password" minlength="8"
-          style="padding:12px 14px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--fg);font-family:inherit;font-size:15px;outline:none">
-        <button type="submit" id="auth_submit" class="btn_primary" style="padding:12px;font-size:15px">Log in</button>
-        <div id="auth_err" style="color:var(--danger);font-size:13px;min-height:18px;text-align:center"></div>
+      <form class="gate_form" id="auth_form" novalidate>
+        <label class="gate_label" for="auth_email">Email</label>
+        <input class="gate_input" type="email" id="auth_email" placeholder="you@example.com" required autocomplete="email" autocapitalize="none" inputmode="email" spellcheck="false">
+        <label class="gate_label" for="auth_password">Password</label>
+        <input class="gate_input" type="password" id="auth_password" placeholder="min 8 characters" required minlength="8">
+        <button type="submit" class="gate_submit" id="auth_submit"><span class="label">Log in</span></button>
+        <div class="gate_err" id="auth_err" role="alert" aria-live="polite"></div>
       </form>
-      <div style="text-align:center;color:var(--muted);font-size:11px">By continuing you accept that this is a demo app on Cloudflare free tier.</div>
+      <p class="gate_fine">By continuing you agree this is a demo on Cloudflare free tier.<br>Your password is PBKDF2-hashed server-side before storage.</p>
     </div>
   `;
   document.body.appendChild(gate);
 
   let mode = initialMode;
-  const tabs = gate.querySelectorAll('.auth_tab');
+  const tabs = gate.querySelectorAll('.gate_tab');
   const emailInput = gate.querySelector('#auth_email');
   const pwInput = gate.querySelector('#auth_password');
   const submit = gate.querySelector('#auth_submit');
+  const submitLabel = submit.querySelector('.label');
   const err = gate.querySelector('#auth_err');
 
-  const applyTab = () => {
-    tabs.forEach(t => {
-      const active = t.getAttribute('data-tab') === mode;
-      t.style.background = active ? 'var(--bg)' : 'transparent';
-      t.style.boxShadow = active ? '0 1px 2px rgba(0,0,0,0.08)' : 'none';
-    });
-    submit.textContent = mode === 'signup' ? 'Create account' : 'Log in';
+  function setErr(msg) {
+    err.textContent = msg || '';
+    emailInput.classList.toggle('err', !!msg);
+    pwInput.classList.toggle('err', !!msg);
+  }
+
+  function applyTab() {
+    tabs.forEach(t => t.classList.toggle('active', t.getAttribute('data-tab') === mode));
+    submitLabel.textContent = mode === 'signup' ? 'Create account' : 'Log in';
     pwInput.autocomplete = mode === 'signup' ? 'new-password' : 'current-password';
-  };
-  tabs.forEach(t => t.addEventListener('click', () => { mode = t.getAttribute('data-tab'); err.textContent = ''; applyTab(); }));
+    pwInput.placeholder = mode === 'signup' ? 'min 8 characters' : 'your password';
+  }
+  tabs.forEach(t => t.addEventListener('click', () => {
+    mode = t.getAttribute('data-tab');
+    setErr('');
+    applyTab();
+    emailInput.focus();
+  }));
   applyTab();
+
+  emailInput.addEventListener('input', () => setErr(''));
+  pwInput.addEventListener('input', () => setErr(''));
 
   gate.querySelector('#auth_form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    err.textContent = '';
+    setErr('');
+
+    const email = emailInput.value.trim();
+    const password = pwInput.value;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setErr('Enter a valid email address.'); emailInput.focus(); return; }
+    if (password.length < 8) { setErr('Password must be at least 8 characters.'); pwInput.focus(); return; }
+
     submit.disabled = true;
-    submit.textContent = (mode === 'signup' ? 'Creating...' : 'Signing in...');
+    submitLabel.textContent = mode === 'signup' ? 'Creating account…' : 'Signing in…';
+    const spin = document.createElement('span');
+    spin.className = 'gate_spin';
+    submit.prepend(spin);
+
     try {
-      if (mode === 'signup') await doSignup(emailInput.value.trim(), pwInput.value);
-      else await doLogin(emailInput.value.trim(), pwInput.value);
+      if (mode === 'signup') await doSignup(email, password);
+      else await doLogin(email, password);
       gate.remove();
       document.body.classList.remove('authed-off');
       state.plan = currentUser.plan || 'free';
       saveState();
       renderUsageBadge();
-      toast({ title: `Hey ${currentUser.email}` }, 2800, 'ok');
-    } catch (e) {
-      err.textContent = e.message || String(e);
+      toast({ title: `Welcome, ${currentUser.email}` }, 2800, 'ok');
+    } catch (err2) {
+      spin.remove();
+      let m = err2.message || String(err2);
+      if (/already registered/i.test(m)) m = 'That email is already registered — switch to Log in.';
+      if (/invalid credentials/i.test(m)) m = 'Wrong email or password.';
+      setErr(m);
       submit.disabled = false;
       applyTab();
     }
   });
-  emailInput.focus();
+
+  setTimeout(() => emailInput.focus(), 50);
 }
 
 // ---------- state -----------------------
