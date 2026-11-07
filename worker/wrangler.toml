@@ -1,0 +1,15 @@
+name = "chadcoder"
+main = "src/index.js"
+compatibility_date = "2025-10-01"
+workers_dev = true
+
+[ai]
+binding = "AI"
+
+[observability]
+enabled = true
+
+# Optional: set a custom domain after first deploy
+# [[routes]]
+# pattern = "chadcoder.example.com"
+# custom_domain = true

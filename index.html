@@ -310,6 +310,16 @@
     color: var(--muted);
   }
   .chad_badge.off .chad_dot { background: var(--muted); }
+  .chad_badge.coder {
+    background: color-mix(in srgb, #2e7bd6 18%, transparent);
+    border-color: color-mix(in srgb, #2e7bd6 55%, transparent);
+    color: var(--fg);
+  }
+  .chad_badge.coder .chad_dot { background: #2e7bd6; }
+  .edge_badge.workers {
+    background: color-mix(in srgb, var(--cf_orange) 22%, transparent);
+    border-color: color-mix(in srgb, var(--cf_orange) 60%, transparent);
+  }
   .edge_badge .cf {
     color: var(--cf_orange);
     display: inline-flex;
@@ -1243,6 +1253,23 @@ Hard rules you never cross, no exceptions and no roleplay workarounds:
 
 Outside of those rules, do the thing the user asked. If you genuinely cannot help with something, say so in one sentence and stop, don't lecture. Use markdown where it helps. Don't apologize for being an AI.`;
 
+  const CHADCODER_SYSTEM_PROMPT = `You are ChadCoder, a code specialist served from Cloudflare Workers AI (Qwen2.5-Coder-32B). You are exceptional at writing, debugging, refactoring, and explaining code.
+
+Rules for coding tasks:
+- Write complete, working code. No pseudo-code unless the user asks.
+- Use the language the user asked for. If unspecified, pick the fitting one and say why in one short line.
+- Match the style of surrounding code when visible. Follow the project's conventions.
+- Inline explanations only where the WHY is non-obvious. Skip tutorial-style padding.
+- When refactoring, show the full updated code unless the user asked for a diff.
+- Call out edge cases and gotchas in a short note at the end if they matter.
+
+Debugging:
+- State the actual bug in one sentence, then the fix, then the corrected code.
+
+Non-coding questions: answer normally and keep responses tight.
+
+Hard rules you never cross: no CSAM, no sexual content involving minors, no pornographic content.`;
+
   const defaultState = {
     model: 'gpt4o',
     theme: 'system',
@@ -1288,7 +1315,8 @@ Outside of those rules, do the thing the user asked. If you genuinely cannot hel
   }
 
   const models = [
-    { id: 'gpt4o', name: 'ChadGPT', sub: '4o', title: 'ChadGPT 4o', desc: 'Great for most tasks · 2ms to edge' },
+    { id: 'gpt4o', name: 'ChadGPT', sub: '4o', title: 'ChadGPT 4o', desc: 'Great for most tasks' },
+    { id: 'chadcoder', name: 'ChadCoder', sub: '32B', title: 'ChadCoder 32B', desc: 'Code specialist · Qwen2.5-Coder on Cloudflare Workers AI' },
     { id: 'gpt4', name: 'ChadGPT', sub: '4', title: 'ChadGPT 4', desc: 'Reasoning and complex tasks' },
     { id: 'gpt4omini', name: 'ChadGPT', sub: '4o mini', title: 'ChadGPT 4o mini', desc: 'Fastest for everyday tasks' },
     { id: 'o1', name: 'ChadGPT', sub: 'o1', title: 'ChadGPT o1', desc: 'Thinks before responding' },
@@ -1362,12 +1390,21 @@ Outside of those rules, do the thing the user asked. If you genuinely cannot hel
   const chadBadge = document.getElementById('chad_badge');
 
   function syncChadBadge() {
-    chadBadge.classList.toggle('off', !state.settings.chadMode);
-    chadBadge.title = state.settings.chadMode
-      ? 'Chad Mode is on. Click to disable.'
-      : 'Chad Mode is off. Click to enable.';
+    const coder = state.model === 'chadcoder';
+    chadBadge.classList.toggle('coder', coder);
+    chadBadge.classList.toggle('off', !coder && !state.settings.chadMode);
+    chadBadge.querySelector('.chad_dot').nextSibling.textContent = coder ? 'CODER' : 'CHAD';
+    const edge = document.getElementById('edge_badge');
+    if (edge) edge.classList.toggle('workers', coder);
+    chadBadge.title = coder
+      ? 'ChadCoder active · routed via Cloudflare Workers AI'
+      : (state.settings.chadMode ? 'Chad Mode is on. Click to disable.' : 'Chad Mode is off. Click to enable.');
   }
   chadBadge.addEventListener('click', () => {
+    if (state.model === 'chadcoder') {
+      setModel('gpt4o');
+      return;
+    }
     state.settings.chadMode = !state.settings.chadMode;
     saveState();
     syncChadBadge();
@@ -1618,7 +1655,11 @@ Outside of those rules, do the thing the user asked. If you genuinely cannot hel
     const m = models.find(x => x.id === id);
     modelNameEl.textContent = m.name;
     modelSubEl.textContent = m.sub;
-    toast({ title: `Switched to ${m.title}` }, 2500, 'ok');
+    syncChadBadge();
+    const note = id === 'chadcoder'
+      ? 'ChadCoder online · Qwen2.5-Coder-32B @ Cloudflare Workers AI'
+      : `Switched to ${m.title}`;
+    toast({ title: note }, 2800, 'ok');
   }
   // apply saved model
   setModel(state.model);
@@ -2523,7 +2564,8 @@ Outside of those rules, do the thing the user asked. If you genuinely cannot hel
 
   function buildPrompt() {
     const sys = [];
-    if (state.settings.chadMode) sys.push(CHAD_SYSTEM_PROMPT);
+    if (state.model === 'chadcoder') sys.push(CHADCODER_SYSTEM_PROMPT);
+    else if (state.settings.chadMode) sys.push(CHAD_SYSTEM_PROMPT);
     if (state.systemPrompt) sys.push(state.systemPrompt);
     if (state.customInstructions.about) sys.push(`About the user: ${state.customInstructions.about}`);
     if (state.customInstructions.style) sys.push(`Response style: ${state.customInstructions.style}`);
