@@ -1,0 +1,23 @@
+name = "chadgpt-code"
+main = "src/index.js"
+compatibility_date = "2025-10-01"
+workers_dev = true
+
+[ai]
+binding = "AI"
+
+[observability]
+enabled = true
+
+[vars]
+ALLOWED_ORIGINS = "http://localhost:8788"
+
+# Required secret (same value across all 3 workers):
+#   npx wrangler secret put SESSION_SECRET
+# Bind the SAME SESSIONS KV namespace as the chat worker so rate limits and
+# revocation work. Create once:
+#   npx wrangler kv namespace create SESSIONS
+# Then paste the id in all three workers.
+# [[kv_namespaces]]
+# binding = "SESSIONS"
+# id = "paste-id-here"

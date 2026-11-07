@@ -1,0 +1,27 @@
+name = "chadgpt-chat"
+main = "src/index.js"
+compatibility_date = "2025-10-01"
+workers_dev = true
+
+[ai]
+binding = "AI"
+
+[observability]
+enabled = true
+
+# Comma-separated allowed origins (your Pages URL + any custom domain).
+# Override in production via: npx wrangler secret put ALLOWED_ORIGINS
+[vars]
+ALLOWED_ORIGINS = "http://localhost:8788"
+
+# ---- Required secrets, set with wrangler secret put:
+# SESSION_SECRET      — random 32+ byte string, SAME value across all 3 workers
+# TURNSTILE_SECRET    — Cloudflare Turnstile secret key (omit to disable Turnstile)
+# ALLOWED_ORIGINS     — overrides [vars] above for production
+
+# ---- Required KV binding: used for session storage + rate limits.
+# Create: npx wrangler kv namespace create SESSIONS
+# Then paste id below.
+# [[kv_namespaces]]
+# binding = "SESSIONS"
+# id = "paste-id-here"

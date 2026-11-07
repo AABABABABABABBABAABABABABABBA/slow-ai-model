@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ChadGPT</title>
+<meta name="description" content="Direct, fast AI chat on Cloudflare Workers.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10' fill='%2319c37d'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<aside id="sidebar">
+  <div class="sb_top">
+    <div class="sb_logo" aria-label="logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5 20 7v10l-8 4.5L4 17V7l8-4.5Z"/><path d="M12 2.5v19"/><path d="M4 7l16 10"/><path d="M20 7 4 17"/></svg>
+    </div>
+    <button class="sb_icon_btn" id="new_chat" aria-label="new chat">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4v16h16v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+    </button>
+  </div>
+  <div class="sb_item" data-act="new_chat">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4v16h16v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+    <span>New chat</span>
+  </div>
+  <div class="sb_item" data-act="search">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+    <span>Search chats</span>
+  </div>
+  <div class="sb_scroll" id="chat_list"></div>
+  <div class="sb_bottom">
+    <div class="sb_user" id="profile_btn">
+      <div class="sb_avatar">C</div>
+      <div>
+        <div class="sb_user_name">You</div>
+        <div class="sb_user_plan">Free · Cloudflare</div>
+      </div>
+    </div>
+  </div>
+</aside>
+<div class="sidebar_scrim" id="scrim"></div>
+
+<div class="chat">
+  <header>
+    <div class="hd_left">
+      <button class="icon_btn hamburger" id="hamburger" aria-label="menu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
+      </button>
+      <button class="model_picker" id="model_btn">
+        <span id="model_name">ChadGPT</span><span class="sub" id="model_sub">fast</span><span class="chev">▾</span>
+      </button>
+      <div class="edge_badge" id="edge_badge">
+        <span class="cf"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 14.5c.3-1 .2-1.9-.3-2.6-.4-.6-1.1-1-2-1l-7.5-.1c-.1 0-.2 0-.3-.1-.1-.1-.1-.2-.1-.3 0-.2.2-.4.4-.4l7.6-.1c.9 0 1.9-.7 2.2-1.6l.5-1.3c0-.1 0-.2 0-.2-.5-2.5-2.8-4.3-5.4-4.3-2.5 0-4.5 1.6-5.3 3.8-.5-.4-1.1-.5-1.8-.5-1.3.1-2.3 1.2-2.4 2.4 0 .3 0 .6.1.9C1 9.3 0 10.4 0 11.8c0 .1.1.2.2.2h15.9c.1 0 .2-.1.3-.2z"/></svg></span>
+        <span class="pulse"></span>
+        <span class="ping" id="edge_ping">edge</span>
+      </div>
+      <button class="container_badge" id="container_badge">
+        <span class="cdot"></span>CTR<span class="cuptime" id="container_uptime">00:00</span>
+      </button>
+    </div>
+    <div class="header_right">
+      <button class="pill_btn" id="settings_btn" aria-label="settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="toast_wrap" id="toasts"></div>
+
+  <main id="main">
+    <div class="inner" id="inner">
+      <div class="welcome" id="welcome">
+        <div class="welcome_badge"><span class="cf"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 14.5c.3-1 .2-1.9-.3-2.6-.4-.6-1.1-1-2-1l-7.5-.1c-.1 0-.2 0-.3-.1-.1-.1-.1-.2-.1-.3 0-.2.2-.4.4-.4l7.6-.1c.9 0 1.9-.7 2.2-1.6l.5-1.3c0-.1 0-.2 0-.2-.5-2.5-2.8-4.3-5.4-4.3-2.5 0-4.5 1.6-5.3 3.8-.5-.4-1.1-.5-1.8-.5-1.3.1-2.3 1.2-2.4 2.4 0 .3 0 .6.1.9C1 9.3 0 10.4 0 11.8c0 .1.1.2.2.2h15.9c.1 0 .2-.1.3-.2z"/></svg></span>POWERED BY CLOUDFLARE WORKERS AI · FREE TIER</div>
+        <h1>What's on your mind?</h1>
+        <div class="welcome_sub">Chat is on <code>chadgpt-chat</code>, code on <code>chadgpt-code</code>, images on <code>chadgpt-image</code>. Type <kbd>/</kbd> for commands.</div>
+        <div class="chips">
+          <button class="chip" data-seed="Write a short poem about Monday mornings">Write</button>
+          <button class="chip" data-seed="5 startup ideas for a solo founder, lateral angles welcome">Brainstorm</button>
+          <button class="chip" data-seed="Explain quantum entanglement like I'm five">Learn</button>
+          <button class="chip" data-seed="Write a javascript function that debounces a callback">Code</button>
+          <button class="chip" data-seed="/image a fox sitting on a mountain at sunset, cinematic">Image</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <div class="composer_wrap" id="composer_wrap">
+      <div class="composer">
+        <div class="attach_strip" id="attach_strip" hidden></div>
+        <textarea id="input" rows="1" placeholder="Message ChadGPT. Type / for commands." autocomplete="off"></textarea>
+        <div class="composer_actions">
+          <div class="composer_left">
+            <button class="ca_btn" id="attach_btn" aria-label="attach">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+            </button>
+          </div>
+          <div class="composer_right">
+            <button class="send_btn" id="send" disabled aria-label="send">
+              <svg id="send_icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="footnote">
+        <span>ChadGPT · running on Cloudflare Workers AI</span>
+      </div>
+    </div>
+  </footer>
+</div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

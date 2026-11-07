@@ -1,0 +1,14 @@
+{
+  "name": "chadgpt-pages",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ChadGPT frontend — plain static site (no Vite, no bundler). Deploys to Cloudflare Pages.",
+  "scripts": {
+    "dev": "wrangler pages dev . --port 8788",
+    "deploy": "wrangler pages deploy . --project-name chadgpt",
+    "deploy:preview": "wrangler pages deploy . --project-name chadgpt --branch preview"
+  },
+  "devDependencies": {
+    "wrangler": "^3.95.0"
+  }
+}
