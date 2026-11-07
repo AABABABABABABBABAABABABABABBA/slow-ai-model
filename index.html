@@ -460,6 +460,72 @@
     align-items: stretch;
     gap: 0;
   }
+
+  .gen_image {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 480px;
+  }
+  .gen_image_frame {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    background: var(--code_bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .gen_image_frame svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .gen_image_frame.loading {
+    background: linear-gradient(135deg, var(--code_bg), var(--surface_raised));
+    background-size: 200% 200%;
+    animation: gen_pulse 2s ease-in-out infinite;
+  }
+  @keyframes gen_pulse {
+    0%, 100% { background-position: 0% 0%; }
+    50% { background-position: 100% 100%; }
+  }
+  .gen_image_frame .loading_label {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--muted);
+    font-size: 13px;
+    font-family: var(--mono);
+    padding: 10px 14px;
+    background: var(--bg);
+    border-radius: 999px;
+    border: 1px solid var(--border);
+  }
+  .gen_image_frame .loading_label .thinking_dot {
+    width: 8px; height: 8px;
+  }
+  .gen_image_caption {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .gen_image_caption .cap {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .gen_image_actions {
+    display: flex;
+    gap: 4px;
+  }
   .msg_row.user { justify-content: flex-end; }
   .msg_row.user .bubble {
     background: var(--user_bubble);
@@ -2452,6 +2518,16 @@ Hard rules you never cross: no CSAM, no sexual content involving minors, no porn
     input.style.height = 'auto';
     sendBtn.disabled = true;
     if (welcome.parentNode) welcome.remove();
+    if (/^\/image(\s|$)/i.test(text)) {
+      const prompt = text.replace(/^\/image\s*/i, '').trim();
+      if (!prompt) {
+        toast({ title: 'Try /image a fox at sunset' }, 2800);
+        sendBtn.disabled = false;
+        return;
+      }
+      runImageTurn(prompt);
+      return;
+    }
     runTurn(text);
   }
 
@@ -2580,6 +2656,191 @@ Hard rules you never cross: no CSAM, no sexual content involving minors, no porn
       msgs[0] = { role: 'user', content: sysBlock + '\n\n---\n\n' + msgs[0].content };
     }
     return msgs;
+  }
+
+  const IMAGE_SYSTEM_PROMPT = `You are an SVG illustrator. The user gives you a visual prompt. You respond with ONLY valid SVG XML, nothing else. No markdown fences, no explanation, no words before or after.
+
+Rules for the SVG:
+- Start with <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400"> and end with </svg>
+- Fill the full 400x400 viewBox. Don't leave the background blank — paint one.
+- Use multiple shapes, gradients (<linearGradient>, <radialGradient>), and opacity for depth.
+- Use <defs> for gradients and patterns.
+- Prefer path, circle, ellipse, polygon, rect. Avoid <text> unless the prompt asks for text.
+- NEVER include <script>, <foreignObject>, event handlers (onload, onclick, etc.), external hrefs, or <image href=...>.
+- Make it visually interesting and recognizable for the prompt. Think illustrator poster, not stick figure.
+- Keep under 12 KB of XML.`;
+
+  function sanitizeSvg(svg) {
+    if (!svg) return '';
+    return svg
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<foreignObject[\s\S]*?<\/foreignObject>/gi, '')
+      .replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, '')
+      .replace(/\son[a-z]+\s*=\s*'[^']*'/gi, '')
+      .replace(/\sxlink:href\s*=\s*"[^"]*"/gi, '')
+      .replace(/\shref\s*=\s*"https?:[^"]*"/gi, '')
+      .replace(/javascript:/gi, '');
+  }
+
+  function extractSvg(text) {
+    if (!text) return null;
+    const m = text.match(/<svg[\s\S]*?<\/svg>/i);
+    return m ? m[0] : null;
+  }
+
+  async function runImageTurn(prompt) {
+    busy = true;
+    setSendMode('stop');
+    ensureChat('/image ' + prompt);
+
+    const userIdx = history.length;
+    history.push({ role: 'user', content: '/image ' + prompt });
+    if (activeChatObj) {
+      activeChatObj.messages = history.slice();
+      saveState();
+    }
+    addUserMsgEl('/image ' + prompt, userIdx);
+
+    const botRow = document.createElement('div');
+    botRow.className = 'msg_row bot';
+    const container = document.createElement('div');
+    container.className = 'bot_body';
+    container.innerHTML = `
+      <div class="gen_image">
+        <div class="gen_image_frame loading">
+          <div class="loading_label"><span class="thinking_dot"></span><span>Rendering image...</span></div>
+        </div>
+        <div class="gen_image_caption">
+          <span class="cap"></span>
+        </div>
+      </div>
+    `;
+    container.querySelector('.cap').textContent = prompt;
+    botRow.appendChild(container);
+    inner.appendChild(botRow);
+    scrollDown();
+
+    const frame = container.querySelector('.gen_image_frame');
+    const caption = container.querySelector('.gen_image_caption');
+    const started = Date.now();
+    currentAbort = new AbortController();
+
+    let svg = null;
+    let errorMsg = null;
+
+    if (!claudeSample) {
+      errorMsg = 'Edge inference offline. Image generation unavailable.';
+    } else {
+      try {
+        const result = await claudeSample([
+          { role: 'user', content: IMAGE_SYSTEM_PROMPT + '\n\n---\n\nPrompt: ' + prompt }
+        ], {
+          modelTier: 'complex',
+          signal: currentAbort.signal,
+        });
+        const raw = (result && result.text) || '';
+        svg = sanitizeSvg(extractSvg(raw));
+        if (!svg) errorMsg = 'Could not render that prompt. Try again with a different description.';
+      } catch (e) {
+        if (e && e.code === 'aborted') errorMsg = 'Cancelled.';
+        else errorMsg = (e && (e.message || e.text)) || 'Image generation failed.';
+      }
+    }
+
+    currentAbort = null;
+    const took = ((Date.now() - started) / 1000).toFixed(2);
+
+    if (svg) {
+      frame.classList.remove('loading');
+      frame.innerHTML = svg;
+      caption.innerHTML = `
+        <span class="cap"></span>
+        <div class="gen_image_actions">
+          <button class="action_btn" data-act="dl" aria-label="download"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg></button>
+          <button class="action_btn" data-act="png" aria-label="download png"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></button>
+          <button class="action_btn" data-act="regen" aria-label="regenerate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg></button>
+          <span class="action_stat">${took}s</span>
+        </div>
+      `;
+      caption.querySelector('.cap').textContent = prompt;
+      const slug = prompt.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 40) || 'image';
+      caption.querySelector('[data-act="dl"]').addEventListener('click', () => {
+        downloadFile(slug + '.svg', svg);
+      });
+      caption.querySelector('[data-act="png"]').addEventListener('click', () => {
+        svgToPng(svg, 1024).then(dataUrl => downloadDataUrl(slug + '.png', dataUrl));
+      });
+      caption.querySelector('[data-act="regen"]').addEventListener('click', () => {
+        if (busy) return;
+        const last = history[history.length - 1];
+        if (last && last.role === 'assistant') history.pop();
+        const lastUser = history[history.length - 1];
+        if (lastUser && lastUser.role === 'user' && lastUser.content.startsWith('/image')) {
+          history.pop();
+          if (activeChatObj) activeChatObj.messages = history.slice();
+          botRow.remove();
+          runImageTurn(prompt);
+        }
+      });
+    } else {
+      frame.classList.remove('loading');
+      frame.innerHTML = `<div style="color:var(--muted);padding:20px;text-align:center;font-size:13px">${errorMsg || 'No image generated.'}</div>`;
+    }
+
+    history.push({ role: 'assistant', content: svg ? `[image: ${prompt}]\n\n${svg}` : (errorMsg || 'No image') });
+    if (activeChatObj) {
+      activeChatObj.messages = history.slice();
+      saveState();
+      if (history.length === 2 && activeChatObj.title.length < 42) {
+        activeChatObj.title = (prompt.slice(0, 32) + (prompt.length > 32 ? '…' : '')).trim();
+        saveState();
+        renderChatList();
+      }
+    }
+
+    busy = false;
+    setSendMode('send');
+    input.focus();
+  }
+
+  async function svgToPng(svg, size) {
+    return new Promise((resolve, reject) => {
+      const blob = new Blob([svg], { type: 'image/svg+xml' });
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, size, size);
+        URL.revokeObjectURL(url);
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
+      img.src = url;
+    });
+  }
+
+  async function downloadDataUrl(filename, dataUrl) {
+    const downloads = await window.claude?.use?.('downloads');
+    if (downloads?.save) {
+      try {
+        const res = await fetch(dataUrl);
+        const blob = await res.blob();
+        await downloads.save({ filename, data: blob });
+        toast({ title: 'Download ready.' }, 2000, 'ok');
+        return;
+      } catch (e) {
+        toast({ title: 'Download declined.' }, 2000);
+        return;
+      }
+    }
+    const w = window.open();
+    if (w) {
+      w.document.write(`<img src="${dataUrl}" style="max-width:100%"/>`);
+      w.document.title = filename;
+    }
   }
 
   async function runTurn(userText) {
