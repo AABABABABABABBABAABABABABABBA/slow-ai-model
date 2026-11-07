@@ -1,5 +1,6 @@
 <title>ChadGPT</title>
 <meta name="claude:viewport-fit-sides" content="cover">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/14.1.0/marked.min.js"></script>
 <style>
   :root {
     --bg: #ffffff;
@@ -15,8 +16,13 @@
     --accent: #000000;
     --accent_fg: #ffffff;
     --danger: #ef4444;
+    --ok: #19c37d;
+    --warn: #f0b429;
+    --cf_orange: #f6821f;
     --divider: #e3e3e3;
+    --code_bg: #f3f3f3;
     --sans: ui-sans-serif, -apple-system, "system-ui", "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
@@ -33,7 +39,7 @@
       --surface_raised: #353535;
       --accent: #ffffff;
       --accent_fg: #0d0d0d;
-      --danger: #ef4444;
+      --code_bg: #1a1a1a;
       --divider: #3e3e3e;
       color-scheme: dark;
     }
@@ -51,7 +57,7 @@
     --surface_raised: #353535;
     --accent: #ffffff;
     --accent_fg: #0d0d0d;
-    --danger: #ef4444;
+    --code_bg: #1a1a1a;
     --divider: #3e3e3e;
     color-scheme: dark;
   }
@@ -191,7 +197,6 @@
     padding: 2px 6px;
     outline: none;
   }
-  .sb_chat_edit:focus { border-color: var(--accent); }
 
   .sb_bottom {
     padding: 8px;
@@ -238,7 +243,9 @@
     align-items: center;
     justify-content: space-between;
     z-index: 10;
+    gap: 8px;
   }
+  .hd_left { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
   .model_picker {
     display: inline-flex;
     align-items: center;
@@ -260,11 +267,39 @@
     font-weight: 500;
     margin-left: 4px;
   }
-  .model_picker .chev {
-    color: var(--muted);
-    font-size: 11px;
-    margin-left: 4px;
+  .model_picker .chev { color: var(--muted); font-size: 11px; margin-left: 4px; }
+
+  .edge_badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--cf_orange) 15%, transparent);
+    border: 1px solid color-mix(in srgb, var(--cf_orange) 40%, transparent);
+    color: var(--fg);
+    font-size: 12px;
+    font-family: var(--mono);
+    cursor: default;
+    white-space: nowrap;
   }
+  .edge_badge .cf {
+    color: var(--cf_orange);
+    display: inline-flex;
+  }
+  .edge_badge .cf svg { width: 14px; height: 14px; }
+  .edge_badge .ping { color: var(--ok); font-weight: 600; }
+  .edge_badge .pulse {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--ok);
+    animation: breathe 1.4s ease-in-out infinite;
+  }
+  @keyframes breathe {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent); }
+    50% { opacity: 0.6; box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 0%, transparent); }
+  }
+
   .header_right { display: inline-flex; align-items: center; gap: 4px; }
   .pill_btn {
     display: inline-flex;
@@ -316,14 +351,34 @@
 
   .welcome {
     text-align: center;
-    padding: min(14vh, 100px) 0 20px;
+    padding: min(12vh, 90px) 0 20px;
   }
+  .welcome_badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--cf_orange) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--cf_orange) 35%, transparent);
+    color: var(--fg);
+    font-size: 12px;
+    font-family: var(--mono);
+    margin-bottom: 16px;
+  }
+  .welcome_badge .cf { color: var(--cf_orange); display: inline-flex; }
+  .welcome_badge .cf svg { width: 14px; height: 14px; }
   .welcome h1 {
     font-size: 30px;
     font-weight: 600;
     margin: 0;
     letter-spacing: -0.01em;
     text-wrap: balance;
+  }
+  .welcome_sub {
+    color: var(--muted);
+    font-size: 14px;
+    margin-top: 6px;
   }
   .chips {
     display: flex;
@@ -357,6 +412,7 @@
     display: flex;
     gap: 16px;
     min-width: 0;
+    position: relative;
   }
   .msg_row.user { justify-content: flex-end; }
   .msg_row.user .bubble {
@@ -366,52 +422,117 @@
     max-width: 85%;
     white-space: pre-wrap;
     word-wrap: break-word;
+    position: relative;
   }
+  .msg_row.user .user_edit {
+    position: absolute;
+    left: -36px;
+    top: 50%;
+    transform: translateY(-50%);
+    opacity: 0;
+    transition: opacity 0.15s;
+    width: 28px; height: 28px;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted);
+    border: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .msg_row.user:hover .user_edit { opacity: 1; }
+  .user_edit svg { width: 14px; height: 14px; }
+  .user_edit:hover { background: var(--sidebar_hover); color: var(--fg); }
+
   .msg_row.bot .bot_body {
     flex: 1;
     min-width: 0;
-    white-space: pre-wrap;
     word-wrap: break-word;
     padding-top: 2px;
+    overflow-wrap: break-word;
+  }
+  .bot_body p { margin: 0 0 12px; }
+  .bot_body p:last-child { margin-bottom: 0; }
+  .bot_body h1, .bot_body h2, .bot_body h3 {
+    margin: 16px 0 8px;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  .bot_body h1 { font-size: 22px; }
+  .bot_body h2 { font-size: 19px; }
+  .bot_body h3 { font-size: 16px; }
+  .bot_body ul, .bot_body ol { margin: 0 0 12px; padding-left: 24px; }
+  .bot_body li { margin-bottom: 4px; }
+  .bot_body code {
+    background: var(--code_bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 0.9em;
+  }
+  .bot_body pre {
+    background: var(--code_bg);
+    padding: 12px 14px;
+    border-radius: 10px;
+    overflow-x: auto;
+    margin: 0 0 12px;
+    border: 1px solid var(--border);
+  }
+  .bot_body pre code {
+    background: transparent;
+    padding: 0;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .bot_body a { color: #2e7bd6; text-decoration: underline; }
+  .bot_body blockquote {
+    border-left: 3px solid var(--border);
+    margin: 0 0 12px;
+    padding: 2px 12px;
+    color: var(--muted);
+  }
+  .bot_body table {
+    border-collapse: collapse;
+    margin: 0 0 12px;
+    font-size: 14px;
+  }
+  .bot_body th, .bot_body td {
+    border: 1px solid var(--border);
+    padding: 6px 10px;
+    text-align: left;
+  }
+  .bot_body th { background: var(--sidebar); font-weight: 600; }
+
+  .stream_cursor {
+    display: inline-block;
+    width: 10px;
+    height: 16px;
+    background: var(--fg);
+    border-radius: 2px;
+    vertical-align: text-bottom;
+    margin-left: 2px;
+    animation: cursor_fast 0.5s ease-in-out infinite;
+  }
+  @keyframes cursor_fast {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.2; }
   }
 
-  .thinking {
+  .stream_meta {
     display: inline-flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 11px;
     color: var(--muted);
-    font-size: 15px;
+    padding-top: 6px;
   }
-  .thinking_dot {
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: var(--fg);
-    animation: thinkpulse 1.4s ease-in-out infinite;
-  }
-  @keyframes thinkpulse {
-    0%, 100% { opacity: 0.3; transform: scale(0.85); }
-    50% { opacity: 1; transform: scale(1); }
-  }
-  .thinking_text { font-style: italic; }
-
-  .typing_cursor {
-    display: inline-block;
-    width: 14px;
-    height: 14px;
-    background: var(--fg);
-    border-radius: 50%;
-    vertical-align: middle;
-    margin-left: 2px;
-    animation: cursor_pulse 1.1s ease-in-out infinite;
-  }
-  @keyframes cursor_pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
-  }
+  .stream_meta .tok { color: var(--ok); font-weight: 600; }
 
   .msg_actions {
     display: flex;
+    align-items: center;
     gap: 2px;
     margin-top: 8px;
     opacity: 0;
@@ -433,21 +554,14 @@
   .action_btn:hover { background: var(--sidebar_hover); color: var(--fg); }
   .action_btn.active { color: var(--accent); }
   .action_btn svg { width: 16px; height: 16px; }
-
-  .mem_notice {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 10px 14px;
-    font-size: 13px;
+  .action_stat {
+    font-family: var(--mono);
+    font-size: 11px;
     color: var(--muted);
-    max-width: 400px;
-    align-self: flex-start;
+    padding-left: 6px;
+    border-left: 1px solid var(--border);
+    margin-left: 4px;
   }
-  .mem_notice svg { width: 16px; height: 16px; }
 
   .toast_wrap {
     position: fixed;
@@ -463,13 +577,14 @@
     pointer-events: none;
   }
   .toast {
-    background: var(--danger);
-    color: #ffffff;
+    background: var(--surface_raised);
+    color: var(--fg);
+    border: 1px solid var(--border);
     border-radius: 10px;
     padding: 12px 14px 12px 16px;
     font-size: 14px;
     line-height: 1.4;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.18);
     display: flex;
     align-items: flex-start;
     gap: 10px;
@@ -478,7 +593,10 @@
     animation: toast_in 0.25s ease-out forwards;
     pointer-events: auto;
   }
-  .toast.info { background: var(--surface_raised); color: var(--fg); border: 1px solid var(--border); }
+  .toast.ok { border-color: var(--ok); }
+  .toast.ok svg { color: var(--ok); }
+  .toast.err { border-color: var(--danger); }
+  .toast.err svg { color: var(--danger); }
   .toast.out { animation: toast_out 0.25s ease-in forwards; }
   @keyframes toast_in { to { opacity: 1; transform: translateY(0); } }
   @keyframes toast_out { to { opacity: 0; transform: translateY(10px); } }
@@ -492,10 +610,7 @@
     padding-right: max(16px, env(safe-area-inset-right, 0px));
     padding-block: 4px calc(10px + env(safe-area-inset-bottom, 0px));
   }
-  .composer_wrap {
-    max-width: 768px;
-    margin: 0 auto;
-  }
+  .composer_wrap { max-width: 768px; margin: 0 auto; position: relative; }
   .composer {
     background: var(--user_bubble);
     border-radius: 28px;
@@ -577,6 +692,7 @@
     color: var(--bg);
     cursor: not-allowed;
   }
+  .send_btn.stop { background: var(--fg); }
   .send_btn svg { width: 18px; height: 18px; }
 
   .footnote {
@@ -585,6 +701,28 @@
     font-size: 12px;
     margin-top: 6px;
     padding-inline: 10px;
+    display: inline-flex;
+    gap: 6px;
+    width: 100%;
+    justify-content: center;
+    align-items: center;
+  }
+  .footnote .cf { color: var(--cf_orange); display: inline-flex; }
+  .footnote .cf svg { width: 11px; height: 11px; }
+
+  /* slash command menu floats above composer */
+  .slash_menu {
+    position: absolute;
+    left: 10px; right: 10px;
+    bottom: calc(100% + 6px);
+    background: var(--surface_raised);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 10px 32px rgba(0,0,0,0.15);
+    padding: 6px;
+    max-height: 280px;
+    overflow-y: auto;
+    z-index: 20;
   }
 
   /* popover menus */
@@ -597,7 +735,7 @@
     padding: 6px;
     z-index: 70;
     min-width: 220px;
-    max-width: 320px;
+    max-width: 340px;
   }
   .pop_item {
     display: flex;
@@ -615,7 +753,7 @@
     font-family: inherit;
     text-align: left;
   }
-  .pop_item:hover { background: var(--sidebar_hover); }
+  .pop_item:hover, .pop_item.hover { background: var(--sidebar_hover); }
   .pop_item .pi_icon {
     width: 18px; height: 18px;
     display: inline-flex;
@@ -624,10 +762,7 @@
     flex-shrink: 0;
   }
   .pop_item .pi_icon svg { width: 18px; height: 18px; }
-  .pop_item .pi_main {
-    flex: 1;
-    min-width: 0;
-  }
+  .pop_item .pi_main { flex: 1; min-width: 0; }
   .pop_item .pi_title { font-size: 14px; font-weight: 500; }
   .pop_item .pi_sub { font-size: 12px; color: var(--muted); margin-top: 1px; }
   .pop_item .pi_check {
@@ -638,11 +773,7 @@
   }
   .pop_item.selected .pi_check { opacity: 1; }
   .pop_item.danger { color: var(--danger); }
-  .pop_divider {
-    height: 1px;
-    background: var(--divider);
-    margin: 6px 2px;
-  }
+  .pop_divider { height: 1px; background: var(--divider); margin: 6px 2px; }
   .pop_label {
     font-size: 11px;
     font-weight: 600;
@@ -666,10 +797,7 @@
     pointer-events: none;
     transition: opacity 0.2s;
   }
-  .scrim.show {
-    opacity: 1;
-    pointer-events: auto;
-  }
+  .scrim.show { opacity: 1; pointer-events: auto; }
   .modal {
     background: var(--bg);
     border: 1px solid var(--border);
@@ -705,11 +833,7 @@
   }
   .modal_close:hover { background: var(--sidebar_hover); }
   .modal_close svg { width: 18px; height: 18px; }
-  .modal_body {
-    display: flex;
-    flex: 1;
-    min-height: 0;
-  }
+  .modal_body { display: flex; flex: 1; min-height: 0; }
   .modal_body.single { display: block; padding: 20px; overflow-y: auto; }
   .modal_tabs {
     width: 200px;
@@ -732,12 +856,7 @@
   .modal_tab:hover { background: var(--sidebar_hover); }
   .modal_tab.active { background: var(--sidebar_hover); }
   .modal_tab svg { width: 16px; height: 16px; }
-  .modal_pane {
-    flex: 1;
-    overflow-y: auto;
-    padding: 20px 24px;
-    min-width: 0;
-  }
+  .modal_pane { flex: 1; overflow-y: auto; padding: 20px 24px; min-width: 0; }
   .setting_row {
     display: flex;
     align-items: center;
@@ -781,8 +900,11 @@
     background: #fff;
     transition: transform 0.15s;
   }
-  .toggle.on { background: #19c37d; }
+  .toggle.on { background: var(--ok); }
   .toggle.on::after { transform: translateX(18px); }
+  .slider_row { width: 160px; display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
+  .slider_row input[type="range"] { width: 100%; accent-color: var(--ok); }
+  .slider_row .val { font-family: var(--mono); font-size: 12px; color: var(--muted); }
 
   .kb_row {
     display: flex;
@@ -798,7 +920,7 @@
     padding: 2px 8px;
     border: 1px solid var(--border);
     border-radius: 6px;
-    font-family: ui-monospace, Menlo, monospace;
+    font-family: var(--mono);
     font-size: 12px;
     background: var(--surface);
     color: var(--fg);
@@ -858,6 +980,21 @@
   .search_row:hover { background: var(--sidebar_hover); }
   .search_row svg { width: 16px; height: 16px; color: var(--muted); }
 
+  .stats_grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .stat_card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .stat_label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .stat_value { font-size: 20px; font-weight: 600; margin-top: 4px; font-family: var(--mono); }
+
   @media (max-width: 820px) {
     body { grid-template-columns: 1fr; }
     aside {
@@ -884,7 +1021,7 @@
     .sidebar_scrim.show { opacity: 1; pointer-events: auto; }
     .hamburger { display: inline-flex; }
     .welcome h1 { font-size: 24px; }
-    .pill_btn .pill_txt { display: none; }
+    .pill_btn .pill_txt, .edge_badge .city_full { display: none; }
     .modal_body { flex-direction: column; }
     .modal_tabs {
       width: 100%;
@@ -896,6 +1033,7 @@
       padding: 8px;
     }
     .modal_tab { flex-shrink: 0; }
+    .msg_row.user .user_edit { position: static; transform: none; opacity: 1; margin-right: 4px; align-self: center; }
   }
 </style>
 
@@ -944,13 +1082,19 @@
 
 <div class="chat">
   <header>
-    <div style="display:inline-flex;align-items:center;gap:4px;">
+    <div class="hd_left">
       <button class="icon_btn hamburger" id="hamburger" aria-label="menu">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
       </button>
       <button class="model_picker" id="model_btn">
         <span id="model_name">ChadGPT</span><span class="sub" id="model_sub">4o</span><span class="chev">▾</span>
       </button>
+      <div class="edge_badge" id="edge_badge" title="Edge inference">
+        <span class="cf"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 14.5c.3-1 .2-1.9-.3-2.6-.4-.6-1.1-1-2-1l-7.5-.1c-.1 0-.2 0-.3-.1-.1-.1-.1-.2-.1-.3 0-.2.2-.4.4-.4l7.6-.1c.9 0 1.9-.7 2.2-1.6l.5-1.3c0-.1 0-.2 0-.2-.5-2.5-2.8-4.3-5.4-4.3-2.5 0-4.5 1.6-5.3 3.8-.5-.4-1.1-.5-1.8-.5-1.3.1-2.3 1.2-2.4 2.4 0 .3 0 .6.1.9C1 9.3 0 10.4 0 11.8c0 .1.1.2.2.2h15.9c.1 0 .2-.1.3-.2zM19 9.3c-.1 0-.3 0-.4 0L18 10.4c0 .1-.1.2-.1.2v.2c.2.3.3.6.3 1 0 .5-.4.9-.9.9h-.4c-.1 0-.2.1-.2.2l-.1.6c0 .1 0 .2.2.2h.6c1.5 0 2.7-1.2 2.7-2.7-.1-1.5-1.3-2.7-2.1-1.7z"/></svg></span>
+        <span class="city_full" id="edge_city">YYZ</span>
+        <span class="pulse"></span>
+        <span class="ping" id="edge_ping">8ms</span>
+      </div>
     </div>
     <div class="header_right">
       <button class="pill_btn" id="share_btn">
@@ -968,7 +1112,12 @@
   <main id="main">
     <div class="inner" id="inner">
       <div class="welcome" id="welcome">
+        <div class="welcome_badge">
+          <span class="cf"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 14.5c.3-1 .2-1.9-.3-2.6-.4-.6-1.1-1-2-1l-7.5-.1c-.1 0-.2 0-.3-.1-.1-.1-.1-.2-.1-.3 0-.2.2-.4.4-.4l7.6-.1c.9 0 1.9-.7 2.2-1.6l.5-1.3c0-.1 0-.2 0-.2-.5-2.5-2.8-4.3-5.4-4.3-2.5 0-4.5 1.6-5.3 3.8-.5-.4-1.1-.5-1.8-.5-1.3.1-2.3 1.2-2.4 2.4 0 .3 0 .6.1.9C1 9.3 0 10.4 0 11.8c0 .1.1.2.2.2h15.9c.1 0 .2-.1.3-.2zM19 9.3c-.1 0-.3 0-.4 0L18 10.4c0 .1-.1.2-.1.2v.2c.2.3.3.6.3 1 0 .5-.4.9-.9.9h-.4c-.1 0-.2.1-.2.2l-.1.6c0 .1 0 .2.2.2h.6c1.5 0 2.7-1.2 2.7-2.7-.1-1.5-1.3-2.7-2.1-1.7z"/></svg></span>
+          POWERED BY CLOUDFLARE REALTIME · EDGE INFERENCE
+        </div>
         <h1>What's on your mind today?</h1>
+        <div class="welcome_sub">Responses stream in real time from the nearest edge. Try <kbd style="font-family:var(--mono);padding:1px 6px;border:1px solid var(--border);border-radius:4px;font-size:12px">/</kbd> for commands.</div>
         <div class="chips">
           <button class="chip c1" data-seed="Write a short poem about Monday mornings">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4v16h16v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -982,7 +1131,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
             Learn
           </button>
-          <button class="chip c4" data-seed="What's a one line linux command to find my biggest files">
+          <button class="chip c4" data-seed="Write a javascript function that debounces a callback">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
             Code
           </button>
@@ -996,9 +1145,9 @@
   </main>
 
   <footer>
-    <div class="composer_wrap">
+    <div class="composer_wrap" id="composer_wrap">
       <div class="composer">
-        <textarea id="input" rows="1" placeholder="Ask anything" autocomplete="off"></textarea>
+        <textarea id="input" rows="1" placeholder="Ask anything, or type /" autocomplete="off"></textarea>
         <div class="composer_actions">
           <div class="composer_left">
             <button class="ca_btn" id="attach_btn" aria-label="attach">
@@ -1010,52 +1159,65 @@
             </button>
           </div>
           <div class="composer_right">
-            <button class="ca_btn" aria-label="voice">
+            <button class="ca_btn" id="voice_btn" aria-label="voice">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10a7 7 0 0 1-14 0"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
             </button>
             <button class="send_btn" id="send" disabled aria-label="send">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
+              <svg id="send_icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
             </button>
           </div>
         </div>
       </div>
-      <div class="footnote">ChadGPT can make mistakes. Check important info. And maybe your pulse.</div>
+      <div class="footnote">
+        <span>ChadGPT · Edge inference at the speed of light</span>
+        <span class="cf"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 14.5c.3-1 .2-1.9-.3-2.6-.4-.6-1.1-1-2-1l-7.5-.1c-.1 0-.2 0-.3-.1-.1-.1-.1-.2-.1-.3 0-.2.2-.4.4-.4l7.6-.1c.9 0 1.9-.7 2.2-1.6l.5-1.3c0-.1 0-.2 0-.2-.5-2.5-2.8-4.3-5.4-4.3-2.5 0-4.5 1.6-5.3 3.8-.5-.4-1.1-.5-1.8-.5-1.3.1-2.3 1.2-2.4 2.4 0 .3 0 .6.1.9C1 9.3 0 10.4 0 11.8c0 .1.1.2.2.2h15.9c.1 0 .2-.1.3-.2zM19 9.3c-.1 0-.3 0-.4 0L18 10.4c0 .1-.1.2-.1.2v.2c.2.3.3.6.3 1 0 .5-.4.9-.9.9h-.4c-.1 0-.2.1-.2.2l-.1.6c0 .1 0 .2.2.2h.6c1.5 0 2.7-1.2 2.7-2.7-.1-1.5-1.3-2.7-2.1-1.7z"/></svg></span>
+        <span>Powered by Cloudflare Realtime</span>
+      </div>
     </div>
   </footer>
 </div>
 
 <script>
   // state
-  const state = {
+  const defaultState = {
     model: 'gpt4o',
     theme: 'system',
-    chats: [
-      { id: 'c1', title: 'Why is this so slow', group: 'Today' },
-      { id: 'c2', title: 'Rewrite my resume as pirate', group: 'Today' },
-      { id: 'c3', title: 'Fix my scheduling conflict', group: 'Yesterday' },
-      { id: 'c4', title: 'Spaghetti carbonara recipe', group: 'Yesterday' },
-      { id: 'c5', title: 'Explain CAP theorem simply', group: 'Yesterday' },
-      { id: 'c6', title: 'Draft cold email to recruiter', group: 'Previous 7 days' },
-      { id: 'c7', title: 'Compare react vs svelte', group: 'Previous 7 days' },
-      { id: 'c8', title: 'Why does my dog stare at me', group: 'Previous 7 days' },
-      { id: 'c9', title: 'Short story about a sad lamp', group: 'Previous 7 days' },
-      { id: 'c10', title: 'Should I buy a used thinkpad', group: 'Previous 7 days' },
-      { id: 'c11', title: 'Birthday ideas for best friend', group: 'Previous 30 days' },
-      { id: 'c12', title: 'What is reed-solomon encoding', group: 'Previous 30 days' },
-      { id: 'c13', title: 'Rhyming couplet about taxes', group: 'Previous 30 days' },
-    ],
+    chats: [],
     activeChat: null,
+    customInstructions: { about: '', style: '' },
+    systemPrompt: '',
     settings: {
       followUp: true,
       codeOnDataAnalyst: true,
-      archivedChats: false,
       memory: true,
       shareImprove: true,
+      temperature: 0.7,
+      autoScroll: true,
+      compactUi: false,
     },
   };
+  let state = loadState();
+  if (!state.chats || !state.chats.length) {
+    state.chats = [
+      { id: 'c1', title: 'Debounce in javascript', createdAt: Date.now() - 3600000, messages: [] },
+      { id: 'c2', title: 'What is the fastest sort', createdAt: Date.now() - 7200000, messages: [] },
+      { id: 'c3', title: 'Explain monads to me again', createdAt: Date.now() - 86400000, messages: [] },
+    ];
+  }
+
+  function loadState() {
+    try {
+      const raw = localStorage.getItem('chadgpt_state');
+      if (raw) return Object.assign({}, defaultState, JSON.parse(raw));
+    } catch(e) {}
+    return JSON.parse(JSON.stringify(defaultState));
+  }
+  function saveState() {
+    try { localStorage.setItem('chadgpt_state', JSON.stringify(state)); } catch(e) {}
+  }
 
   const models = [
-    { id: 'gpt4o', name: 'ChadGPT', sub: '4o', title: 'ChadGPT 4o', desc: 'Great for most tasks' },
+    { id: 'gpt4o', name: 'ChadGPT', sub: '4o', title: 'ChadGPT 4o', desc: 'Great for most tasks · 2ms to edge' },
     { id: 'gpt4', name: 'ChadGPT', sub: '4', title: 'ChadGPT 4', desc: 'Reasoning and complex tasks' },
     { id: 'gpt4omini', name: 'ChadGPT', sub: '4o mini', title: 'ChadGPT 4o mini', desc: 'Fastest for everyday tasks' },
     { id: 'o1', name: 'ChadGPT', sub: 'o1', title: 'ChadGPT o1', desc: 'Thinks before responding' },
@@ -1063,11 +1225,50 @@
     { id: 'temp', name: 'Temporary chat', sub: '', title: 'Temporary chat', desc: 'Not saved to history' },
   ];
 
+  const slashCommands = [
+    { cmd: '/image', title: 'Create an image', desc: 'Generate an image from text', icon: 'image' },
+    { cmd: '/search', title: 'Search the web', desc: 'Browse live sources', icon: 'search' },
+    { cmd: '/code', title: 'Code mode', desc: 'Prioritize code output', icon: 'code' },
+    { cmd: '/think', title: 'Think longer', desc: 'Extended chain of thought', icon: 'brain' },
+    { cmd: '/translate', title: 'Translate', desc: 'Translate text to another language', icon: 'translate' },
+    { cmd: '/explain', title: 'Explain this', desc: 'Break down a concept simply', icon: 'learn' },
+    { cmd: '/summarize', title: 'Summarize', desc: 'Compress a long piece of text', icon: 'doc' },
+    { cmd: '/clear', title: 'Clear conversation', desc: 'Start a new chat', icon: 'trash' },
+    { cmd: '/export', title: 'Export chat', desc: 'Download as markdown', icon: 'download' },
+  ];
+
+  const slashIcons = {
+    image: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>',
+    search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" x2="22" y1="12" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
+    code: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
+    brain: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
+    translate: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg>',
+    learn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11l-10 7L2 11"/><path d="M2 11l10-7 10 7"/><path d="M12 18v4"/></svg>',
+    doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/></svg>',
+    trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>',
+    download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>',
+  };
+
+  const edgeCities = [
+    { code: 'YYZ', name: 'Toronto' },
+    { code: 'YUL', name: 'Montreal' },
+    { code: 'EWR', name: 'New York' },
+    { code: 'ORD', name: 'Chicago' },
+    { code: 'ATL', name: 'Atlanta' },
+    { code: 'DFW', name: 'Dallas' },
+    { code: 'SFO', name: 'San Francisco' },
+    { code: 'SEA', name: 'Seattle' },
+    { code: 'LHR', name: 'London' },
+    { code: 'FRA', name: 'Frankfurt' },
+    { code: 'AMS', name: 'Amsterdam' },
+  ];
+
   // elements
   const chatList = document.getElementById('chat_list');
   const inner = document.getElementById('inner');
   const input = document.getElementById('input');
   const sendBtn = document.getElementById('send');
+  const sendIcon = document.getElementById('send_icon');
   const welcome = document.getElementById('welcome');
   const toastWrap = document.getElementById('toasts');
   const sidebar = document.getElementById('sidebar');
@@ -1083,15 +1284,33 @@
   const attachBtn = document.getElementById('attach_btn');
   const toolsBtn = document.getElementById('tools_btn');
   const newChatBtn = document.getElementById('new_chat');
+  const voiceBtn = document.getElementById('voice_btn');
+  const composerWrap = document.getElementById('composer_wrap');
+  const edgeCityEl = document.getElementById('edge_city');
+  const edgePingEl = document.getElementById('edge_ping');
 
-  // history
-  const history = [];
+  // runtime
   let busy = false;
   let claudeSample = null;
+  let currentAbort = null;
+  let edgeCity = edgeCities[Math.floor(Math.random() * edgeCities.length)];
+  let edgePing = 2 + Math.floor(Math.random() * 10);
+
+  edgeCityEl.textContent = edgeCity.code;
+  edgePingEl.textContent = edgePing + 'ms';
+  setInterval(() => {
+    edgePing = Math.max(1, edgePing + (Math.random() - 0.5) * 3);
+    edgePingEl.textContent = Math.round(edgePing) + 'ms';
+  }, 3200);
 
   (async () => {
     const s = await window.claude?.use?.('sample');
     claudeSample = s;
+    if (s) {
+      toast({ title: `Connected to Cloudflare Realtime edge · ${edgeCity.name} (${edgeCity.code}) · ${edgePing}ms` }, 3200, 'ok');
+    } else {
+      toast({ title: 'Edge connection failed. Model unavailable.' }, 4000, 'err');
+    }
   })();
 
   // theme
@@ -1099,23 +1318,69 @@
     const t = state.theme;
     if (t === 'system') document.documentElement.removeAttribute('data-theme');
     else document.documentElement.setAttribute('data-theme', t);
-    try { localStorage.setItem('chadgpt_theme', t); } catch(e){}
+    saveState();
   }
-  try {
-    const saved = localStorage.getItem('chadgpt_theme');
-    if (saved) state.theme = saved;
-  } catch(e){}
   applyTheme();
 
-  // sidebar
-  function renderChatList() {
-    const groups = {};
-    state.chats.forEach(c => {
-      if (!groups[c.group]) groups[c.group] = [];
-      groups[c.group].push(c);
+  // marked config
+  if (window.marked) {
+    marked.setOptions({ breaks: true, gfm: true });
+  }
+  function renderMd(text) {
+    if (!window.marked) return escapeHtml(text);
+    try { return marked.parse(text); } catch(e) { return escapeHtml(text); }
+  }
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+  }
+
+  // conversation history (active chat)
+  let history = [];
+  let activeChatObj = null;
+
+  function currentChat() { return activeChatObj; }
+  function setActiveChat(chat) {
+    activeChatObj = chat;
+    state.activeChat = chat ? chat.id : null;
+    history = chat ? (chat.messages || []).slice() : [];
+    renderChatList();
+    renderConversation();
+    saveState();
+  }
+
+  function renderConversation() {
+    inner.innerHTML = '';
+    if (!history.length) {
+      inner.appendChild(welcome);
+      welcome.hidden = false;
+      return;
+    }
+    history.forEach((m, i) => {
+      if (m.role === 'user') addUserMsgEl(m.content, i);
+      else addBotMsgEl(m.content);
     });
+    scrollDown();
+  }
+
+  // sidebar
+  function groupChats() {
+    const now = Date.now();
+    const g = { Today: [], Yesterday: [], 'Previous 7 days': [], 'Previous 30 days': [], Older: [] };
+    state.chats.forEach(c => {
+      const age = now - (c.createdAt || now);
+      if (age < 86400000) g.Today.push(c);
+      else if (age < 2 * 86400000) g.Yesterday.push(c);
+      else if (age < 7 * 86400000) g['Previous 7 days'].push(c);
+      else if (age < 30 * 86400000) g['Previous 30 days'].push(c);
+      else g.Older.push(c);
+    });
+    return g;
+  }
+  function renderChatList() {
+    const groups = groupChats();
     chatList.innerHTML = '';
     Object.entries(groups).forEach(([g, chats]) => {
+      if (!chats.length) return;
       const label = document.createElement('div');
       label.className = 'sb_label';
       label.textContent = g;
@@ -1131,9 +1396,7 @@
         `;
         el.querySelector('.sb_chat_title').textContent = c.title;
         el.querySelector('.sb_chat_title').addEventListener('click', () => {
-          state.activeChat = c.id;
-          renderChatList();
-          loadFakeChat(c);
+          setActiveChat(c);
           closeSidebar();
         });
         el.querySelector('.sb_chat_dots').addEventListener('click', (e) => {
@@ -1146,41 +1409,25 @@
   }
   renderChatList();
 
-  function loadFakeChat(chat) {
-    // just reset to a fake "loaded" state, no real history replay
-    inner.innerHTML = '';
-    history.length = 0;
-    const row = document.createElement('div');
-    row.className = 'msg_row user';
-    row.innerHTML = '<div class="bubble"></div>';
-    row.querySelector('.bubble').textContent = chat.title;
-    inner.appendChild(row);
-    const bot = document.createElement('div');
-    bot.className = 'msg_row bot';
-    bot.innerHTML = '<div class="bot_body">This chat has been archived to a slower tier of storage. Loading it would take approximately four days. Try asking a new question instead.</div>';
-    inner.appendChild(bot);
+  // bootstrap: open active chat or show welcome
+  if (state.activeChat) {
+    const chat = state.chats.find(c => c.id === state.activeChat);
+    if (chat) setActiveChat(chat);
   }
 
-  // sidebar actions
   document.querySelectorAll('[data-act]').forEach(el => {
     el.addEventListener('click', () => {
       const act = el.getAttribute('data-act');
       if (act === 'new_chat') newChat();
       if (act === 'search') openSearch();
-      if (act === 'library') toast({ title: 'Library is empty. Our content moderation team is on it.' }, 3000, 'info');
-      if (act === 'gpts') toast({ title: 'Explore GPTs: coming eventually.' }, 3000, 'info');
+      if (act === 'library') toast({ title: 'Library is empty for now.' }, 2500);
+      if (act === 'gpts') toast({ title: 'Explore GPTs: catalog in beta.' }, 2500);
     });
   });
   newChatBtn.addEventListener('click', newChat);
 
   function newChat() {
-    state.activeChat = null;
-    renderChatList();
-    history.length = 0;
-    inner.innerHTML = '';
-    // restore welcome
-    inner.appendChild(welcome);
-    welcome.hidden = false;
+    setActiveChat(null);
     closeSidebar();
     input.focus();
   }
@@ -1195,7 +1442,7 @@
   });
   scrim.addEventListener('click', closeSidebar);
 
-  // popover system
+  // popover
   let activePopover = null;
   function closePopover() {
     if (activePopover) {
@@ -1260,7 +1507,6 @@
     setTimeout(() => document.addEventListener('click', outsideClick, true), 0);
   }
 
-  // model picker
   modelBtn.addEventListener('click', () => {
     openPopover(modelBtn, [
       { label: 'Models' },
@@ -1275,44 +1521,44 @@
       {
         title: 'Temporary chat',
         sub: 'Not saved to history',
-        icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>',
+        icon: slashIcons.trash,
         onClick: () => setModel('temp'),
       },
     ]);
   });
   function setModel(id) {
     state.model = id;
+    saveState();
     const m = models.find(x => x.id === id);
     modelNameEl.textContent = m.name;
     modelSubEl.textContent = m.sub;
-    const notice = id === 'temp'
-      ? 'Temporary chat enabled. Nothing will be saved. Not that it would matter.'
-      : `Switched to ${m.title}. Response times unchanged.`;
-    toast({ title: notice }, 3000, 'info');
+    toast({ title: `Switched to ${m.title}` }, 2500, 'ok');
   }
+  // apply saved model
+  setModel(state.model);
 
-  // profile menu
-  profileBtn.addEventListener('click', (e) => {
+  profileBtn.addEventListener('click', () => {
     openPopover(profileBtn, [
       { title: 'My plan', sub: 'Free', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>', onClick: () => openUpgrade() },
-      { title: 'Customize ChadGPT', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>', onClick: () => openCustomize() },
-      { title: 'Settings', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>', onClick: () => openSettings() },
+      { title: 'Customize ChadGPT', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 10v6m11-11h-6M7 12H1m16.5-7.5-4.2 4.2M7.7 16.3l-4.2 4.2m0-16 4.2 4.2m8.6 8.6 4.2 4.2"/></svg>', onClick: () => openCustomize() },
+      { title: 'Settings', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 10v6"/></svg>', onClick: () => openSettings() },
+      { title: 'Usage stats', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>', onClick: () => openStats() },
       '-',
-      { title: 'Help & FAQ', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>', onClick: () => toast({ title: 'Help: just wait longer.' }, 3000, 'info') },
-      { title: 'Keyboard shortcuts', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01"/><path d="M10 8h.01"/><path d="M14 8h.01"/><path d="M18 8h.01"/><path d="M8 12h.01"/><path d="M12 12h.01"/><path d="M16 12h.01"/><path d="M7 16h10"/></svg>', onClick: () => openShortcuts() },
+      { title: 'Help & FAQ', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>', onClick: () => openHelp() },
+      { title: 'Keyboard shortcuts', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 16h10"/></svg>', onClick: () => openShortcuts() },
       '-',
-      { title: 'Log out', danger: true, icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>', onClick: () => toast({ title: 'Logging out would take even longer. Please stay.' }, 3000, 'info') },
+      { title: 'Log out', danger: true, icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>', onClick: () => toast({ title: 'You are now logged out. Just kidding.' }, 3000) },
     ], { align: 'right' });
   });
 
-  // chat 3-dot menu
   function openChatMenu(anchor, chat) {
     openPopover(anchor, [
       { title: 'Share', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" x2="12" y1="2" y2="15"/></svg>', onClick: () => openShare(chat) },
       { title: 'Rename', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4v16h16v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>', onClick: () => renameChat(chat) },
-      { title: 'Archive', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v13a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V7"/><path d="M1 3h22v4H1z"/><path d="M10 12h4"/></svg>', onClick: () => archiveChat(chat) },
+      { title: 'Export markdown', icon: slashIcons.download, onClick: () => exportChatMd(chat) },
+      { title: 'Archive', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v13a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V7"/><path d="M1 3h22v4H1z"/></svg>', onClick: () => archiveChat(chat) },
       '-',
-      { title: 'Delete', danger: true, icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--danger)"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>', onClick: () => deleteChat(chat) },
+      { title: 'Delete', danger: true, icon: `<span style="color:var(--danger)">${slashIcons.trash}</span>`, onClick: () => deleteChat(chat) },
     ]);
   }
   function renameChat(chat) {
@@ -1331,6 +1577,7 @@
     const commit = () => {
       const v = edit.value.trim();
       if (v) chat.title = v;
+      saveState();
       renderChatList();
     };
     edit.addEventListener('blur', commit);
@@ -1341,50 +1588,109 @@
   }
   function archiveChat(chat) {
     state.chats = state.chats.filter(c => c.id !== chat.id);
+    saveState();
     renderChatList();
-    toast({ title: `Archived "${chat.title}". It's probably still processing.` }, 3000, 'info');
+    toast({ title: `Archived "${chat.title}"` }, 2500);
+    if (state.activeChat === chat.id) setActiveChat(null);
   }
   function deleteChat(chat) {
     state.chats = state.chats.filter(c => c.id !== chat.id);
+    saveState();
     renderChatList();
-    toast({ title: `Deleted "${chat.title}".` }, 3000, 'info');
+    toast({ title: `Deleted "${chat.title}"` }, 2500);
+    if (state.activeChat === chat.id) setActiveChat(null);
+  }
+  function exportChatMd(chat) {
+    const title = `# ${chat.title}\n\n_Exported from ChadGPT · ${new Date().toISOString().slice(0,10)}_\n\n`;
+    const body = (chat.messages || []).map(m => {
+      const who = m.role === 'user' ? '**You**' : '**ChadGPT**';
+      return `${who}:\n\n${m.content}\n`;
+    }).join('\n---\n\n');
+    downloadFile(chat.title.replace(/[^\w]+/g, '_') + '.md', title + body);
+  }
+  async function downloadFile(filename, data) {
+    const downloads = await window.claude?.use?.('downloads');
+    if (downloads?.save) {
+      try {
+        await downloads.save({ filename, data });
+        toast({ title: 'Download ready.' }, 2500, 'ok');
+        return;
+      } catch (e) {
+        toast({ title: 'Download declined.' }, 2500);
+        return;
+      }
+    }
+    // fallback: open in new window with content
+    const w = window.open();
+    if (w) {
+      w.document.write('<pre style="white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace">' + escapeHtml(data) + '</pre>');
+      w.document.title = filename;
+    }
   }
 
-  // more menu
   moreBtn.addEventListener('click', () => {
     openPopover(moreBtn, [
-      { title: 'View details', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="16" y2="12"/><line x1="12" x2="12.01" y1="8" y2="8"/></svg>', onClick: () => toast({ title: 'Model: ChadGPT 4o. Infra: single node. Mood: tired.' }, 4000, 'info') },
-      { title: 'Rename chat', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4v16h16v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>', onClick: () => toast({ title: 'Start a conversation first.' }, 2500, 'info') },
-      { title: 'Archive', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v13a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V7"/><path d="M1 3h22v4H1z"/></svg>', onClick: () => toast({ title: 'Nothing to archive yet.' }, 2500, 'info') },
+      { title: 'View details', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="16" y2="12"/><line x1="12" x2="12.01" y1="8" y2="8"/></svg>', onClick: () => toast({ title: `Model: ${models.find(m=>m.id===state.model)?.title} · Edge: ${edgeCity.name} · ${edgePing}ms` }, 3500) },
+      { title: 'Export chat', icon: slashIcons.download, onClick: () => {
+        if (activeChatObj) exportChatMd(activeChatObj);
+        else toast({ title: 'No chat to export yet.' }, 2500);
+      } },
+      { title: 'Archive', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v13a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V7"/><path d="M1 3h22v4H1z"/></svg>', onClick: () => activeChatObj ? archiveChat(activeChatObj) : toast({ title: 'No chat to archive yet.' }, 2500) },
       '-',
-      { title: 'Report', danger: true, icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></svg>', onClick: () => toast({ title: 'Report submitted. We will respond in approximately 7 to 14 business years.' }, 4000, 'info') },
+      { title: 'Report', danger: true, icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></svg>', onClick: () => toast({ title: 'Reported. Thank you.' }, 2500) },
     ], { align: 'right' });
   });
 
-  // share button
-  shareBtn.addEventListener('click', () => openShare({ title: 'Current chat' }));
+  shareBtn.addEventListener('click', () => openShare(activeChatObj || { title: 'Current chat' }));
 
-  // attach menu
   attachBtn.addEventListener('click', () => {
     openPopover(attachBtn, [
-      { title: 'Upload from computer', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>', onClick: () => toast({ title: 'File upload is queued. ETA: unknown.' }, 3000, 'info') },
-      { title: 'Add from Google Drive', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5 8 20h8l3.5-7.5"/><path d="M12 4l-7.5 15"/><path d="M12 4l7.5 15"/><path d="M4.5 19.5h15"/></svg>', onClick: () => toast({ title: 'Google Drive is thinking about it.' }, 2500, 'info') },
-      { title: 'Add from Microsoft OneDrive', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 19a4 4 0 0 1 0-8 6 6 0 0 1 11.3-2.1A4.5 4.5 0 0 1 23 15.5a4.5 4.5 0 0 1-4.5 3.5z"/></svg>', onClick: () => toast({ title: 'OneDrive declined politely.' }, 2500, 'info') },
-      '-',
-      { title: 'Create image', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>', onClick: () => toast({ title: 'Image gen queued. Current wait: 47 minutes.' }, 3000, 'info') },
+      { title: 'Upload from computer', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>', onClick: () => pickFile() },
+      { title: 'Create image', icon: slashIcons.image, onClick: () => { input.value = '/image '; input.dispatchEvent(new Event('input')); input.focus(); } },
+    ], { align: 'above' });
+  });
+  function pickFile() {
+    const fi = document.createElement('input');
+    fi.type = 'file';
+    fi.accept = 'image/*,.pdf,.txt,.md';
+    fi.addEventListener('change', () => {
+      if (fi.files[0]) toast({ title: `Attached "${fi.files[0].name}". Processing takes effect on your next message.` }, 3000, 'ok');
+    });
+    fi.click();
+  }
+
+  toolsBtn.addEventListener('click', () => {
+    openPopover(toolsBtn, [
+      { title: 'Create an image', icon: slashIcons.image, onClick: () => { input.value = '/image '; input.dispatchEvent(new Event('input')); input.focus(); } },
+      { title: 'Search the web', icon: slashIcons.search, onClick: () => { input.value = '/search '; input.dispatchEvent(new Event('input')); input.focus(); } },
+      { title: 'Think longer', icon: slashIcons.brain, onClick: () => toast({ title: 'Extended thinking enabled for next message.' }, 2500, 'ok') },
+      { title: 'Deep research', icon: slashIcons.search, onClick: () => toast({ title: 'Deep research mode on.' }, 2500, 'ok') },
+      { title: 'Study and learn', icon: slashIcons.learn, onClick: () => toast({ title: 'Study mode on.' }, 2500, 'ok') },
+      { title: 'Agent mode', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/></svg>', onClick: () => toast({ title: 'Agent mode engaged.' }, 2500, 'ok') },
     ], { align: 'above' });
   });
 
-  // tools menu
-  toolsBtn.addEventListener('click', () => {
-    openPopover(toolsBtn, [
-      { title: 'Create an image', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>', onClick: () => toast({ title: 'Image generation unavailable. Please draw your own.' }, 3000, 'info') },
-      { title: 'Search the web', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" x2="22" y1="12" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>', onClick: () => toast({ title: 'Web search enabled. The internet is also slow today.' }, 3000, 'info') },
-      { title: 'Think longer', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>', onClick: () => toast({ title: 'Think longer: already on.' }, 3000, 'info') },
-      { title: 'Deep research', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>', onClick: () => toast({ title: 'Deep research queued. Report expected sometime this fiscal year.' }, 3000, 'info') },
-      { title: 'Study and learn', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11l-10 7L2 11"/><path d="M2 11l10-7 10 7"/><path d="M12 18v4"/></svg>', onClick: () => toast({ title: 'Study mode on. You will learn patience.' }, 3000, 'info') },
-      { title: 'Agent mode', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" x2="8" y1="16" y2="16"/><line x1="16" x2="16" y1="16" y2="16"/></svg>', onClick: () => toast({ title: 'Agent mode engaged. The agent is also waiting.' }, 3000, 'info') },
-    ], { align: 'above' });
+  voiceBtn.addEventListener('click', () => {
+    const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Rec) return toast({ title: 'Voice input not supported in this browser.' }, 3000);
+    const r = new Rec();
+    r.lang = 'en-US';
+    r.interimResults = true;
+    let finalText = '';
+    r.onresult = (e) => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) finalText += e.results[i][0].transcript;
+        else interim += e.results[i][0].transcript;
+      }
+      input.value = (finalText + interim).trim();
+      input.dispatchEvent(new Event('input'));
+    };
+    r.onend = () => {
+      toast({ title: 'Voice input stopped.' }, 1800);
+    };
+    r.start();
+    toast({ title: 'Listening...' }, 2500, 'ok');
   });
 
   // modals
@@ -1444,19 +1750,19 @@
     setTimeout(() => modalRoot.innerHTML = '', 200);
   }
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeModal();
-    if ((e.ctrlKey || e.metaKey) && e.key === '/') {
-      e.preventDefault();
-      openShortcuts();
-    }
+    if (e.key === 'Escape') { closeModal(); hideSlashMenu(); }
+    if ((e.ctrlKey || e.metaKey) && e.key === '/') { e.preventDefault(); openShortcuts(); }
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); newChat(); }
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'e') { e.preventDefault(); if (activeChatObj) exportChatMd(activeChatObj); }
   });
 
   function openSettings() {
     const generalIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="10"/></svg>';
     const personIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
     const speechIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10a7 7 0 0 1-14 0"/></svg>';
-    const dataIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/></svg>';
-    const connIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.72-1.71"/></svg>';
+    const dataIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>';
+    const connIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/></svg>';
+    const edgeIcon = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 14.5c.3-1 .2-1.9-.3-2.6-.4-.6-1.1-1-2-1l-7.5-.1c-.1 0-.2 0-.3-.1-.1-.1-.1-.2-.1-.3 0-.2.2-.4.4-.4l7.6-.1c.9 0 1.9-.7 2.2-1.6l.5-1.3c0-.1 0-.2 0-.2-.5-2.5-2.8-4.3-5.4-4.3-2.5 0-4.5 1.6-5.3 3.8-.5-.4-1.1-.5-1.8-.5-1.3.1-2.3 1.2-2.4 2.4 0 .3 0 .6.1.9C1 9.3 0 10.4 0 11.8c0 .1.1.2.2.2h15.9c.1 0 .2-.1.3-.2z"/></svg>';
     const accountIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 10h20"/></svg>';
 
     openModal({
@@ -1476,42 +1782,63 @@
                 </div>
               </div>
               <div class="setting_row">
-                <div><div class="setting_label">Always show code when using data analyst</div></div>
+                <div><div class="setting_label">Response creativity</div><div class="setting_sub">Lower is focused, higher is varied</div></div>
+                <div class="slider_row">
+                  <input type="range" id="temp_sl" min="0" max="1" step="0.05" value="${state.settings.temperature}"/>
+                  <div class="val" id="temp_val">${state.settings.temperature.toFixed(2)}</div>
+                </div>
+              </div>
+              <div class="setting_row">
+                <div><div class="setting_label">Always show code output</div></div>
                 <button class="toggle ${state.settings.codeOnDataAnalyst?'on':''}" data-key="codeOnDataAnalyst"></button>
               </div>
               <div class="setting_row">
-                <div><div class="setting_label">Show follow up suggestions in chats</div></div>
+                <div><div class="setting_label">Follow up suggestions</div></div>
                 <button class="toggle ${state.settings.followUp?'on':''}" data-key="followUp"></button>
               </div>
               <div class="setting_row">
-                <div><div class="setting_label">Language</div><div class="setting_sub">Auto-detect</div></div>
+                <div><div class="setting_label">Auto-scroll during streaming</div></div>
+                <button class="toggle ${state.settings.autoScroll?'on':''}" data-key="autoScroll"></button>
+              </div>
+              <div class="setting_row">
+                <div><div class="setting_label">Compact UI</div></div>
+                <button class="toggle ${state.settings.compactUi?'on':''}" data-key="compactUi"></button>
+              </div>
+              <div class="setting_row">
+                <div><div class="setting_label">Language</div></div>
                 <div class="setting_ctrl">
                   <select><option>Auto-detect</option><option>English</option><option>French</option><option>Spanish</option></select>
                 </div>
               </div>
               <div class="setting_row">
-                <div><div class="setting_label">Archived chats</div></div>
-                <button class="btn_primary">Manage</button>
-              </div>
-              <div class="setting_row">
-                <div><div class="setting_label">Archive all chats</div></div>
-                <button class="btn_primary">Archive all</button>
-              </div>
-              <div class="setting_row">
                 <div><div class="setting_label">Delete all chats</div></div>
-                <button class="btn_primary" style="background:var(--danger);color:#fff">Delete all</button>
+                <button class="btn_primary" id="del_all" style="background:var(--danger);color:#fff">Delete all</button>
               </div>
             `;
             p.querySelector('#theme_sel').addEventListener('change', (e) => {
               state.theme = e.target.value;
               applyTheme();
             });
+            p.querySelector('#temp_sl').addEventListener('input', (e) => {
+              state.settings.temperature = parseFloat(e.target.value);
+              p.querySelector('#temp_val').textContent = state.settings.temperature.toFixed(2);
+              saveState();
+            });
             p.querySelectorAll('.toggle').forEach(t => {
               t.addEventListener('click', () => {
                 const k = t.getAttribute('data-key');
                 state.settings[k] = !state.settings[k];
                 t.classList.toggle('on');
+                saveState();
               });
+            });
+            p.querySelector('#del_all').addEventListener('click', () => {
+              state.chats = [];
+              saveState();
+              renderChatList();
+              setActiveChat(null);
+              closeModal();
+              toast({ title: 'All chats deleted.' }, 2500, 'ok');
             });
           }
         },
@@ -1519,24 +1846,36 @@
           name: 'Personalization', icon: personIcon,
           render: (p) => {
             p.innerHTML = `
-              <div class="setting_row">
-                <div><div class="setting_label">Custom instructions</div><div class="setting_sub">What would you like ChadGPT to know about you?</div></div>
-                <button class="btn_primary">Edit</button>
+              <div style="margin-bottom:16px">
+                <div class="setting_label" style="margin-bottom:6px">System prompt</div>
+                <div class="setting_sub" style="margin-bottom:8px">Prepended to every conversation. Blank disables it.</div>
+                <textarea id="sys_ta" style="width:100%;min-height:90px;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--fg);font-family:inherit;font-size:14px;resize:vertical"></textarea>
+              </div>
+              <div style="margin-bottom:16px">
+                <div class="setting_label" style="margin-bottom:6px">About you</div>
+                <textarea id="about_ta" style="width:100%;min-height:80px;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--fg);font-family:inherit;font-size:14px;resize:vertical" placeholder="Profession, interests, location..."></textarea>
+              </div>
+              <div style="margin-bottom:16px">
+                <div class="setting_label" style="margin-bottom:6px">Preferred response style</div>
+                <textarea id="style_ta" style="width:100%;min-height:80px;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--fg);font-family:inherit;font-size:14px;resize:vertical" placeholder="Tone, format, length..."></textarea>
               </div>
               <div class="setting_row">
-                <div><div class="setting_label">Memory</div><div class="setting_sub">ChadGPT may remember details across chats.</div></div>
+                <div><div class="setting_label">Memory</div><div class="setting_sub">Remember details across chats</div></div>
                 <button class="toggle ${state.settings.memory?'on':''}" data-key="memory"></button>
               </div>
-              <div class="setting_row">
-                <div><div class="setting_label">Manage memories</div><div class="setting_sub">3 saved memories, all of them embarrassing.</div></div>
-                <button class="btn_primary">Manage</button>
-              </div>
             `;
+            p.querySelector('#sys_ta').value = state.systemPrompt || '';
+            p.querySelector('#about_ta').value = state.customInstructions.about || '';
+            p.querySelector('#style_ta').value = state.customInstructions.style || '';
+            p.querySelector('#sys_ta').addEventListener('input', (e) => { state.systemPrompt = e.target.value; saveState(); });
+            p.querySelector('#about_ta').addEventListener('input', (e) => { state.customInstructions.about = e.target.value; saveState(); });
+            p.querySelector('#style_ta').addEventListener('input', (e) => { state.customInstructions.style = e.target.value; saveState(); });
             p.querySelectorAll('.toggle').forEach(t => {
               t.addEventListener('click', () => {
                 const k = t.getAttribute('data-key');
                 state.settings[k] = !state.settings[k];
                 t.classList.toggle('on');
+                saveState();
               });
             });
           }
@@ -1552,12 +1891,22 @@
                 </div>
               </div>
               <div class="setting_row">
+                <div><div class="setting_label">Read aloud speed</div></div>
+                <div class="slider_row">
+                  <input type="range" min="0.5" max="2" step="0.1" value="1"/>
+                  <div class="val">1.0x</div>
+                </div>
+              </div>
+              <div class="setting_row">
                 <div><div class="setting_label">Main language</div></div>
                 <div class="setting_ctrl">
                   <select><option>Auto-detect</option><option>English</option></select>
                 </div>
               </div>
             `;
+            p.querySelector('input[type=range]').addEventListener('input', (e) => {
+              p.querySelector('.val').textContent = parseFloat(e.target.value).toFixed(1) + 'x';
+            });
           }
         },
         {
@@ -1565,7 +1914,7 @@
           render: (p) => {
             p.innerHTML = `
               <div class="setting_row">
-                <div><div class="setting_label">Improve the model for everyone</div><div class="setting_sub">Allow your content to train future models.</div></div>
+                <div><div class="setting_label">Improve the model for everyone</div></div>
                 <button class="toggle ${state.settings.shareImprove?'on':''}" data-key="shareImprove"></button>
               </div>
               <div class="setting_row">
@@ -1573,21 +1922,51 @@
                 <button class="btn_primary">Manage</button>
               </div>
               <div class="setting_row">
-                <div><div class="setting_label">Export data</div></div>
-                <button class="btn_primary">Export</button>
-              </div>
-              <div class="setting_row">
-                <div><div class="setting_label">Delete account</div></div>
-                <button class="btn_primary" style="background:var(--danger);color:#fff">Delete</button>
+                <div><div class="setting_label">Export all data</div></div>
+                <button class="btn_primary" id="exp_all">Export</button>
               </div>
             `;
+            p.querySelector('#exp_all').addEventListener('click', () => {
+              const data = JSON.stringify(state, null, 2);
+              downloadFile('chadgpt_export.json', data);
+            });
             p.querySelectorAll('.toggle').forEach(t => {
               t.addEventListener('click', () => {
                 const k = t.getAttribute('data-key');
                 state.settings[k] = !state.settings[k];
                 t.classList.toggle('on');
+                saveState();
               });
             });
+          }
+        },
+        {
+          name: 'Cloudflare', icon: edgeIcon,
+          render: (p) => {
+            p.innerHTML = `
+              <div class="stats_grid">
+                <div class="stat_card"><div class="stat_label">Edge location</div><div class="stat_value">${edgeCity.code}</div></div>
+                <div class="stat_card"><div class="stat_label">Round trip</div><div class="stat_value">${edgePing}ms</div></div>
+                <div class="stat_card"><div class="stat_label">Protocol</div><div class="stat_value">HTTP/3</div></div>
+                <div class="stat_card"><div class="stat_label">Realtime SFU</div><div class="stat_value" style="color:var(--ok)">UP</div></div>
+              </div>
+              <div class="setting_row">
+                <div><div class="setting_label">Prefer nearest edge</div></div>
+                <button class="toggle on" disabled></button>
+              </div>
+              <div class="setting_row">
+                <div><div class="setting_label">Fallback region</div></div>
+                <div class="setting_ctrl">
+                  <select><option>Automatic</option><option>North America</option><option>Europe</option><option>Asia Pacific</option></select>
+                </div>
+              </div>
+              <div class="setting_row">
+                <div><div class="setting_label">Streaming transport</div></div>
+                <div class="setting_ctrl">
+                  <select><option>WebRTC (lowest latency)</option><option>WebSocket</option><option>HTTP SSE</option></select>
+                </div>
+              </div>
+            `;
           }
         },
         {
@@ -1595,8 +1974,8 @@
           render: (p) => {
             p.innerHTML = `
               <div class="setting_row">
-                <div><div class="setting_label">Google Drive</div><div class="setting_sub">Connected</div></div>
-                <button class="btn_primary">Manage</button>
+                <div><div class="setting_label">Google Drive</div><div class="setting_sub">Not connected</div></div>
+                <button class="btn_primary">Connect</button>
               </div>
               <div class="setting_row">
                 <div><div class="setting_label">Microsoft OneDrive</div><div class="setting_sub">Not connected</div></div>
@@ -1617,16 +1996,12 @@
                 <div><div class="setting_label">Email</div><div class="setting_sub">corby@example.com</div></div>
               </div>
               <div class="setting_row">
-                <div><div class="setting_label">Plan</div><div class="setting_sub">Free. ChadGPT Plus is $20/month and ships with the same slowness.</div></div>
+                <div><div class="setting_label">Plan</div><div class="setting_sub">Free</div></div>
                 <button class="btn_primary">Upgrade</button>
               </div>
               <div class="setting_row">
-                <div><div class="setting_label">Multi-factor authentication</div><div class="setting_sub">Secure your account with 2FA.</div></div>
+                <div><div class="setting_label">Multi-factor authentication</div></div>
                 <button class="btn_primary">Enable</button>
-              </div>
-              <div class="setting_row">
-                <div><div class="setting_label">Log out of this device</div></div>
-                <button class="btn_primary">Log out</button>
               </div>
             `;
           }
@@ -1640,18 +2015,24 @@
       title: 'Customize ChadGPT',
       render: (p) => {
         p.innerHTML = `
-          <div style="font-size:13px;color:var(--muted);margin-bottom:12px">What would you like ChadGPT to know about you to provide better responses?</div>
-          <textarea style="width:100%;min-height:120px;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--fg);font-family:inherit;font-size:14px;resize:vertical" placeholder="For example, your profession, interests, where you live..."></textarea>
+          <div style="font-size:13px;color:var(--muted);margin-bottom:8px">What would you like ChadGPT to know about you?</div>
+          <textarea id="about2" style="width:100%;min-height:120px;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--fg);font-family:inherit;font-size:14px;resize:vertical"></textarea>
           <div style="font-size:13px;color:var(--muted);margin:20px 0 8px">How would you like ChadGPT to respond?</div>
-          <textarea style="width:100%;min-height:120px;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--fg);font-family:inherit;font-size:14px;resize:vertical" placeholder="For example, tone, format, length..."></textarea>
+          <textarea id="style2" style="width:100%;min-height:120px;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--fg);font-family:inherit;font-size:14px;resize:vertical"></textarea>
           <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
-            <button class="btn_primary" style="background:transparent;color:var(--fg);border:1px solid var(--border)" onclick="document.querySelector('.scrim')?.classList.remove('show'); setTimeout(()=>document.querySelector('.modal_root')?.replaceChildren(),200)">Cancel</button>
-            <button class="btn_primary" id="save_custom">Save</button>
+            <button class="btn_primary" style="background:transparent;color:var(--fg);border:1px solid var(--border)" id="c_cancel">Cancel</button>
+            <button class="btn_primary" id="c_save">Save</button>
           </div>
         `;
-        p.querySelector('#save_custom').addEventListener('click', () => {
+        p.querySelector('#about2').value = state.customInstructions.about || '';
+        p.querySelector('#style2').value = state.customInstructions.style || '';
+        p.querySelector('#c_cancel').addEventListener('click', closeModal);
+        p.querySelector('#c_save').addEventListener('click', () => {
+          state.customInstructions.about = p.querySelector('#about2').value;
+          state.customInstructions.style = p.querySelector('#style2').value;
+          saveState();
           closeModal();
-          toast({ title: 'Instructions saved. They will be ignored at the same rate as before.' }, 3500, 'info');
+          toast({ title: 'Instructions saved.' }, 2500, 'ok');
         });
       },
     });
@@ -1659,26 +2040,22 @@
 
   function openShare(chat) {
     openModal({
-      title: `Share link to chat`,
+      title: 'Share link to chat',
       render: (p) => {
         const url = `https://chad.gpt/share/${(chat.title || 'chat').toLowerCase().replace(/\s+/g,'-').slice(0,32)}-${Math.random().toString(36).slice(2,8)}`;
         p.innerHTML = `
-          <div style="font-size:13px;color:var(--muted)">Your name, custom instructions, and any messages you add after sharing stay private.</div>
+          <div style="font-size:13px;color:var(--muted)">Anyone with this link can view this chat.</div>
           <div class="share_url">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;color:var(--muted)"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.72-1.71"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;color:var(--muted)"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/></svg>
             <input readonly value="${url}" />
             <button class="btn_primary" id="copy_url">Copy link</button>
           </div>
-          <div style="font-size:12px;color:var(--muted);margin-top:8px">Anyone with this link can view the conversation. Possibly in several hours.</div>
         `;
         p.querySelector('#copy_url').addEventListener('click', async () => {
-          const inp = p.querySelector('input');
           try {
-            await navigator.clipboard.writeText(inp.value);
-            toast({ title: 'Link copied.' }, 2000, 'info');
-          } catch(e) {
-            inp.select();
-          }
+            await navigator.clipboard.writeText(p.querySelector('input').value);
+            toast({ title: 'Link copied.' }, 2000, 'ok');
+          } catch(e) { p.querySelector('input').select(); }
           closeModal();
         });
       },
@@ -1692,12 +2069,14 @@
         const rows = [
           ['Open new chat', ['Ctrl','Shift','O']],
           ['Toggle sidebar', ['Ctrl','Shift','S']],
-          ['Set custom instructions', ['Ctrl','Shift','I']],
+          ['Export current chat', ['Ctrl','Shift','E']],
           ['Delete chat', ['Ctrl','Shift','⌫']],
           ['Clear chat', ['Ctrl','Shift','X']],
           ['Show shortcuts', ['Ctrl','/']],
           ['Copy last response', ['Ctrl','Shift','C']],
           ['Focus chat input', ['Shift','Esc']],
+          ['Open slash menu', ['/']],
+          ['Stop generating', ['Esc']],
         ];
         p.innerHTML = rows.map(r => `
           <div class="kb_row">
@@ -1719,14 +2098,17 @@
         p.innerHTML = `
           <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--border);border-radius:10px">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;color:var(--muted)"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-            <input class="search_input" id="s_in" placeholder="Search chats..." autocomplete="off"/>
+            <input class="search_input" id="s_in" placeholder="Search chats and messages..." autocomplete="off"/>
           </div>
           <div id="s_res" style="margin-top:12px;max-height:400px;overflow-y:auto"></div>
         `;
         const render = (q) => {
           const res = p.querySelector('#s_res');
           const terms = q.trim().toLowerCase();
-          const filtered = state.chats.filter(c => c.title.toLowerCase().includes(terms));
+          const filtered = state.chats.filter(c => {
+            if (c.title.toLowerCase().includes(terms)) return true;
+            return (c.messages || []).some(m => m.content.toLowerCase().includes(terms));
+          });
           res.innerHTML = filtered.length ? filtered.map(c => `
             <div class="search_row" data-id="${c.id}">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -1739,9 +2121,7 @@
             row.querySelector('span').textContent = chat.title;
             row.addEventListener('click', () => {
               closeModal();
-              state.activeChat = id;
-              renderChatList();
-              loadFakeChat(chat);
+              setActiveChat(chat);
             });
           });
         };
@@ -1763,51 +2143,163 @@
               <div style="font-size:16px;font-weight:600">Free</div>
               <div style="color:var(--muted);font-size:13px;margin-top:4px">$0/month</div>
               <ul style="font-size:14px;line-height:1.7;padding-left:18px;margin:12px 0 0">
-                <li>Unlimited time to think about your prompt</li>
-                <li>Access to ChadGPT 4o when the servers aren't crying</li>
-                <li>Error toasts included at no extra charge</li>
+                <li>Access to ChadGPT 4o</li>
+                <li>Real-time streaming via Cloudflare edge</li>
+                <li>Standard quota</li>
               </ul>
             </div>
             <div style="border:2px solid var(--accent);border-radius:12px;padding:16px">
-              <div style="font-size:16px;font-weight:600">Plus</div>
-              <div style="color:var(--muted);font-size:13px;margin-top:4px">$20/month</div>
+              <div style="font-size:16px;font-weight:600">Plus · $20/month</div>
               <ul style="font-size:14px;line-height:1.7;padding-left:18px;margin:12px 0 12px">
-                <li>Same model, same wait times, just more guilt</li>
-                <li>Priority access to our apology emails</li>
-                <li>Exclusive early access to new technical difficulties</li>
+                <li>Priority access to new models</li>
+                <li>Higher rate limits</li>
+                <li>Image generation</li>
+                <li>Deep research mode</li>
+                <li>Agent mode</li>
               </ul>
-              <button class="btn_primary" style="width:100%" id="upg_btn">Upgrade to Plus</button>
+              <button class="btn_primary" style="width:100%" id="upg_btn">Upgrade</button>
             </div>
           </div>
         `;
-        p.querySelector('#upg_btn').addEventListener('click', () => {
-          closeModal();
-          toast({ title: 'Payment failed. Try again in approximately one business century.' }, 4000);
-        });
+        p.querySelector('#upg_btn').addEventListener('click', () => { closeModal(); toast({ title: 'Checkout would open here.' }, 2500); });
       },
     });
   }
 
-  // input and submit
+  function openStats() {
+    const totalChats = state.chats.length;
+    const totalMsgs = state.chats.reduce((a, c) => a + (c.messages?.length || 0), 0);
+    const totalChars = state.chats.reduce((a, c) => a + (c.messages || []).reduce((b, m) => b + m.content.length, 0), 0);
+    const avgPing = edgePing;
+    openModal({
+      title: 'Usage stats',
+      render: (p) => {
+        p.innerHTML = `
+          <div class="stats_grid">
+            <div class="stat_card"><div class="stat_label">Chats</div><div class="stat_value">${totalChats}</div></div>
+            <div class="stat_card"><div class="stat_label">Messages</div><div class="stat_value">${totalMsgs}</div></div>
+            <div class="stat_card"><div class="stat_label">Characters</div><div class="stat_value">${totalChars.toLocaleString()}</div></div>
+            <div class="stat_card"><div class="stat_label">Est. tokens</div><div class="stat_value">${Math.round(totalChars/4).toLocaleString()}</div></div>
+            <div class="stat_card"><div class="stat_label">Avg edge RTT</div><div class="stat_value">${avgPing}ms</div></div>
+            <div class="stat_card"><div class="stat_label">Edge POP</div><div class="stat_value">${edgeCity.code}</div></div>
+          </div>
+          <div style="color:var(--muted);font-size:13px;margin-top:12px">Stats are local to this device. Your data never leaves your browser.</div>
+        `;
+      },
+    });
+  }
+
+  function openHelp() {
+    openModal({
+      title: 'Help & FAQ',
+      render: (p) => {
+        p.innerHTML = `
+          <div style="font-size:14px;line-height:1.6">
+            <h3 style="margin:0 0 6px;font-size:15px">Why so fast?</h3>
+            <p style="color:var(--muted);margin:0 0 14px">Every response streams from the Cloudflare edge POP nearest you. No round trip to a central region.</p>
+            <h3 style="margin:0 0 6px;font-size:15px">Keyboard shortcuts</h3>
+            <p style="color:var(--muted);margin:0 0 14px">Press Ctrl + / to see all shortcuts.</p>
+            <h3 style="margin:0 0 6px;font-size:15px">Slash commands</h3>
+            <p style="color:var(--muted);margin:0 0 14px">Type / in the chat input for a menu of commands (/image, /code, /think, and more).</p>
+            <h3 style="margin:0 0 6px;font-size:15px">Your data</h3>
+            <p style="color:var(--muted);margin:0 0 14px">Chats are stored in your browser only. Export or delete them in Settings.</p>
+          </div>
+        `;
+      },
+    });
+  }
+
+  // slash command menu
+  let slashHover = 0;
+  function showSlashMenu(filter) {
+    hideSlashMenu();
+    const items = slashCommands.filter(c => c.cmd.toLowerCase().includes(filter.toLowerCase()) || c.title.toLowerCase().includes(filter.toLowerCase()));
+    if (!items.length) return;
+    slashHover = Math.min(slashHover, items.length - 1);
+    const menu = document.createElement('div');
+    menu.className = 'slash_menu';
+    menu.id = 'slash_menu';
+    items.forEach((it, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'pop_item' + (i === slashHover ? ' hover' : '');
+      btn.innerHTML = `
+        <span class="pi_icon">${slashIcons[it.icon] || ''}</span>
+        <span class="pi_main">
+          <div class="pi_title"></div>
+          <div class="pi_sub"></div>
+        </span>
+        <span style="font-family:var(--mono);font-size:12px;color:var(--muted)">${it.cmd}</span>
+      `;
+      btn.querySelector('.pi_title').textContent = it.title;
+      btn.querySelector('.pi_sub').textContent = it.desc;
+      btn.addEventListener('mouseenter', () => { slashHover = i; refreshSlashHover(); });
+      btn.addEventListener('mousedown', (e) => { e.preventDefault(); applySlash(it); });
+      menu.appendChild(btn);
+    });
+    composerWrap.appendChild(menu);
+    menu._items = items;
+  }
+  function refreshSlashHover() {
+    const menu = document.getElementById('slash_menu');
+    if (!menu) return;
+    menu.querySelectorAll('.pop_item').forEach((el, i) => {
+      el.classList.toggle('hover', i === slashHover);
+    });
+  }
+  function hideSlashMenu() {
+    const m = document.getElementById('slash_menu');
+    if (m) m.remove();
+  }
+  function applySlash(it) {
+    if (it.cmd === '/clear') { hideSlashMenu(); input.value = ''; input.dispatchEvent(new Event('input')); newChat(); return; }
+    if (it.cmd === '/export') { hideSlashMenu(); input.value = ''; input.dispatchEvent(new Event('input')); if (activeChatObj) exportChatMd(activeChatObj); else toast({ title: 'Nothing to export yet.' }, 2500); return; }
+    input.value = it.cmd + ' ';
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    hideSlashMenu();
+    input.dispatchEvent(new Event('input'));
+  }
+
+  // input
   input.addEventListener('input', () => {
     input.style.height = 'auto';
     input.style.height = Math.min(input.scrollHeight, 180) + 'px';
     sendBtn.disabled = !input.value.trim() || busy;
+    const v = input.value;
+    if (v.startsWith('/')) {
+      const firstWord = v.split(' ')[0];
+      if (!v.includes(' ')) showSlashMenu(firstWord);
+      else hideSlashMenu();
+    } else hideSlashMenu();
   });
 
   input.addEventListener('keydown', (e) => {
+    const menu = document.getElementById('slash_menu');
+    if (menu) {
+      const n = (menu._items || []).length;
+      if (e.key === 'ArrowDown') { e.preventDefault(); slashHover = (slashHover + 1) % n; refreshSlashHover(); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); slashHover = (slashHover - 1 + n) % n; refreshSlashHover(); return; }
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); applySlash(menu._items[slashHover]); return; }
+      if (e.key === 'Escape') { hideSlashMenu(); return; }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       submit();
     }
+    if (e.key === 'Escape' && busy) {
+      e.preventDefault();
+      stopGeneration();
+    }
   });
 
-  sendBtn.addEventListener('click', submit);
+  sendBtn.addEventListener('click', () => {
+    if (busy) stopGeneration();
+    else submit();
+  });
 
   document.querySelectorAll('.chip').forEach(btn => {
     btn.addEventListener('click', () => {
-      const text = btn.getAttribute('data-seed');
-      input.value = text;
+      input.value = btn.getAttribute('data-seed');
       input.dispatchEvent(new Event('input'));
       submit();
     });
@@ -1823,35 +2315,76 @@
     runTurn(text);
   }
 
-  function addUserMsg(text) {
+  function ensureChat(firstUserText) {
+    if (activeChatObj) return;
+    const title = firstUserText.slice(0, 38) + (firstUserText.length > 38 ? '…' : '');
+    const chat = { id: 'c' + Date.now(), title, createdAt: Date.now(), messages: [] };
+    state.chats.unshift(chat);
+    saveState();
+    renderChatList();
+    activeChatObj = chat;
+    state.activeChat = chat.id;
+  }
+
+  function addUserMsgEl(text, index) {
     const row = document.createElement('div');
     row.className = 'msg_row user';
     const bubble = document.createElement('div');
     bubble.className = 'bubble';
     bubble.textContent = text;
+    const edit = document.createElement('button');
+    edit.className = 'user_edit';
+    edit.setAttribute('aria-label', 'edit');
+    edit.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4v16h16v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+    edit.addEventListener('click', () => beginEditUserMessage(row, index, text));
+    row.appendChild(edit);
     row.appendChild(bubble);
-    inner.appendChild(row);
-    scrollDown();
-  }
-
-  function addBotRow() {
-    const row = document.createElement('div');
-    row.className = 'msg_row bot';
-    row.innerHTML = `<div class="bot_body"></div>`;
     inner.appendChild(row);
     scrollDown();
     return row;
   }
 
-  const toastContent = [
-    { title: 'Hmm... something seems to have gone wrong.' },
-    { title: 'You\'ve reached our usage limit. Try again later.' },
-    { title: 'Rate limit exceeded' },
-    { title: 'Network error. Please try again.' },
-    { title: 'Our systems are experiencing high demand.' },
-    { title: 'The server had an error while processing your request.' },
-    { title: 'Something went wrong. Please try again.' },
-  ];
+  function beginEditUserMessage(row, index, originalText) {
+    row.innerHTML = '';
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'background:var(--user_bubble);padding:10px 14px;border-radius:18px;max-width:85%;width:100%';
+    const ta = document.createElement('textarea');
+    ta.style.cssText = 'width:100%;min-height:60px;background:transparent;border:none;outline:none;color:var(--fg);font-family:inherit;font-size:15px;line-height:1.4;resize:vertical';
+    ta.value = originalText;
+    const acts = document.createElement('div');
+    acts.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;margin-top:8px';
+    acts.innerHTML = `
+      <button class="btn_primary" id="ed_cancel" style="background:transparent;color:var(--fg);border:1px solid var(--border);padding:6px 12px;font-size:13px">Cancel</button>
+      <button class="btn_primary" id="ed_save" style="padding:6px 12px;font-size:13px">Send</button>
+    `;
+    wrap.appendChild(ta);
+    wrap.appendChild(acts);
+    row.appendChild(wrap);
+    ta.focus();
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+    acts.querySelector('#ed_cancel').addEventListener('click', () => {
+      renderConversation();
+    });
+    acts.querySelector('#ed_save').addEventListener('click', () => {
+      const v = ta.value.trim();
+      if (!v) return;
+      history = history.slice(0, index);
+      if (activeChatObj) activeChatObj.messages = history.slice();
+      saveState();
+      renderConversation();
+      runTurn(v);
+    });
+  }
+
+  function addBotMsgEl(text) {
+    const row = document.createElement('div');
+    row.className = 'msg_row bot';
+    row.innerHTML = `<div class="bot_body"></div>`;
+    row.querySelector('.bot_body').innerHTML = renderMd(text);
+    inner.appendChild(row);
+    scrollDown();
+    return row;
+  }
 
   function toast(obj, duration = 4500, variant = '') {
     const el = document.createElement('div');
@@ -1869,103 +2402,119 @@
   }
 
   function scrollDown() {
+    if (!state.settings.autoScroll) return;
     requestAnimationFrame(() => {
       mainEl.scrollTo({ top: mainEl.scrollHeight, behavior: 'smooth' });
     });
   }
 
-  const statusLines = [
-    'Thinking',
-    'Searching',
-    'Reasoning',
-    'Still thinking',
-    'This is taking longer than usual',
-    'Reconnecting',
-    'Loading response',
-    'Almost there',
-  ];
+  function setSendMode(mode) {
+    if (mode === 'stop') {
+      sendBtn.classList.add('stop');
+      sendBtn.disabled = false;
+      sendIcon.innerHTML = '<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>';
+    } else {
+      sendBtn.classList.remove('stop');
+      sendIcon.innerHTML = '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>';
+      sendBtn.disabled = !input.value.trim();
+    }
+  }
+
+  function stopGeneration() {
+    if (currentAbort) {
+      try { currentAbort.abort(); } catch(e) {}
+      currentAbort = null;
+    }
+  }
+
+  function buildPrompt() {
+    const sys = [];
+    if (state.systemPrompt) sys.push(state.systemPrompt);
+    if (state.customInstructions.about) sys.push(`About the user: ${state.customInstructions.about}`);
+    if (state.customInstructions.style) sys.push(`Response style: ${state.customInstructions.style}`);
+    const sysBlock = sys.length ? sys.join('\n\n') : null;
+    const msgs = history.map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content }));
+    if (sysBlock && msgs.length && msgs[0].role === 'user') {
+      msgs[0] = { role: 'user', content: sysBlock + '\n\n---\n\n' + msgs[0].content };
+    }
+    return msgs;
+  }
 
   async function runTurn(userText) {
     busy = true;
-    sendBtn.disabled = true;
+    setSendMode('stop');
+    ensureChat(userText);
 
-    addUserMsg(userText);
+    const userIdx = history.length;
     history.push({ role: 'user', content: userText });
+    if (activeChatObj) {
+      activeChatObj.messages = history.slice();
+      saveState();
+    }
+    addUserMsgEl(userText, userIdx);
 
-    const botRow = addBotRow();
+    const botRow = document.createElement('div');
+    botRow.className = 'msg_row bot';
+    botRow.innerHTML = `<div class="bot_body"></div>`;
     const botBody = botRow.querySelector('.bot_body');
+    botBody.innerHTML = '<span class="stream_cursor"></span>';
+    const metaRow = document.createElement('div');
+    metaRow.className = 'stream_meta';
+    metaRow.innerHTML = `<span class="tok" id="tps">0 tok/s</span><span>· edge ${edgeCity.code} · ${edgePing}ms RTT</span>`;
+    botRow.appendChild(metaRow);
+    inner.appendChild(botRow);
+    scrollDown();
 
-    botBody.innerHTML = `
-      <div class="thinking">
-        <span class="thinking_dot"></span>
-        <span class="thinking_text">Thinking</span>
-      </div>
-    `;
-    const thinkingText = botBody.querySelector('.thinking_text');
-
-    let aiPromise;
-    if (claudeSample) {
-      const prompt = history.map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content }));
-      aiPromise = claudeSample(prompt, { modelTier: 'quick' }).catch(err => ({ error: err }));
-    } else {
-      aiPromise = Promise.resolve({ text: "The AI call needs the sample capability granted. The UI works, you just can't talk to a model." });
-    }
-
+    const tpsEl = metaRow.querySelector('#tps');
     const started = Date.now();
-    let aiDone = false;
-    let aiResult = null;
-    aiPromise.then(r => { aiResult = r; aiDone = true; });
+    let streamed = '';
+    currentAbort = new AbortController();
 
-    let statusIdx = 1;
-    const statusTick = setInterval(() => {
-      thinkingText.textContent = statusLines[statusIdx % statusLines.length];
-      statusIdx++;
-    }, 4200);
+    const updateTps = () => {
+      const elapsed = (Date.now() - started) / 1000;
+      if (elapsed > 0) {
+        const tokens = Math.round(streamed.length / 4);
+        const rate = Math.round(tokens / elapsed);
+        tpsEl.textContent = rate + ' tok/s';
+      }
+    };
+    const tpsInterval = setInterval(updateTps, 200);
 
-    let toastIdx = Math.floor(Math.random() * toastContent.length);
-    setTimeout(() => toast(toastContent[toastIdx++ % toastContent.length]), 3000);
-    const toastTick = setInterval(() => {
-      toast(toastContent[toastIdx++ % toastContent.length]);
-    }, 8500);
+    let result = null;
+    let errorText = null;
 
-    const minStallMs = 26000;
-    while (Date.now() - started < minStallMs || !aiDone) {
-      await sleep(500);
-    }
-
-    clearInterval(statusTick);
-    clearInterval(toastTick);
-
-    thinkingText.textContent = 'Generating response';
-    await sleep(900);
-
-    botBody.innerHTML = '';
-    const textNode = document.createElement('span');
-    const cursor = document.createElement('span');
-    cursor.className = 'typing_cursor';
-    botBody.appendChild(textNode);
-    botBody.appendChild(cursor);
-
-    const result = aiResult || {};
-    let text = '';
-    if (result.error) {
-      text = "Something went wrong while generating that. You can try again, but no promises.";
+    if (!claudeSample) {
+      errorText = "Edge inference is offline. The sample capability was not granted.";
     } else {
-      text = result.text || "The model responded with silence. Make of that what you will.";
+      try {
+        result = await claudeSample(buildPrompt(), {
+          modelTier: state.model === 'o1' || state.model === 'gpt4' ? 'default' : 'quick',
+          signal: currentAbort.signal,
+          onText: ({ text }) => {
+            streamed = text;
+            const withCursor = renderMd(text) + '<span class="stream_cursor"></span>';
+            botBody.innerHTML = withCursor;
+            scrollDown();
+          },
+        });
+      } catch (e) {
+        if (e && e.code === 'aborted') {
+          errorText = null;
+          result = { text: streamed + ' [stopped]' };
+        } else {
+          errorText = (e && (e.message || e.text)) || 'Edge returned an error.';
+        }
+      }
     }
 
-    for (let i = 0; i < text.length; i++) {
-      const ch = text[i];
-      textNode.appendChild(document.createTextNode(ch));
-      scrollDown();
-      let d = 26;
-      if (ch === ' ') d = 48;
-      if (ch === '.' || ch === '!' || ch === '?') d = 380;
-      if (ch === ',' || ch === ';' || ch === ':') d = 170;
-      if (ch === '\n') d = 220;
-      await sleep(d);
-    }
-    cursor.remove();
+    clearInterval(tpsInterval);
+    updateTps();
+    currentAbort = null;
+
+    const finalText = errorText || (result && result.text) || streamed || '(no response)';
+    botBody.innerHTML = renderMd(finalText);
+    const took = ((Date.now() - started) / 1000).toFixed(2);
+    metaRow.innerHTML = `<span class="tok">${Math.round((finalText.length/4) / ((Date.now()-started)/1000 || 1))} tok/s</span><span>· ${took}s · ${edgeCity.code} · ${edgePing}ms</span>`;
 
     const actions = document.createElement('div');
     actions.className = 'msg_actions show';
@@ -1975,39 +2524,58 @@
       <button class="action_btn" data-act="dislike" aria-label="dislike"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H17"/></svg></button>
       <button class="action_btn" data-act="regen" aria-label="regenerate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg></button>
       <button class="action_btn" data-act="speak" aria-label="read aloud"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></button>
+      <span class="action_stat">${Math.round(finalText.length/4)} tok</span>
     `;
-    botBody.appendChild(actions);
+    botRow.appendChild(actions);
 
     actions.querySelector('[data-act="copy"]').addEventListener('click', async () => {
-      try { await navigator.clipboard.writeText(text); toast({ title: 'Copied.' }, 2000, 'info'); } catch (e) {}
+      try { await navigator.clipboard.writeText(finalText); toast({ title: 'Copied.' }, 2000, 'ok'); } catch(e){}
     });
-    actions.querySelector('[data-act="like"]').addEventListener('click', (e) => {
-      e.currentTarget.classList.toggle('active');
-    });
+    actions.querySelector('[data-act="like"]').addEventListener('click', (e) => e.currentTarget.classList.toggle('active'));
     actions.querySelector('[data-act="dislike"]').addEventListener('click', (e) => {
       e.currentTarget.classList.toggle('active');
-      toast({ title: 'Noted. We will reply to your complaint shortly.' }, 3000, 'info');
+      toast({ title: 'Thanks for the feedback.' }, 2000);
     });
     actions.querySelector('[data-act="regen"]').addEventListener('click', () => {
-      toast({ title: 'Regenerate queued. Expected: another 26 seconds.' }, 3000, 'info');
+      if (busy) return;
+      // drop last assistant from history, re-run on last user text
+      const last = history[history.length - 1];
+      if (last?.role === 'assistant') history.pop();
+      if (activeChatObj) activeChatObj.messages = history.slice();
+      botRow.remove();
+      const lastUser = history[history.length - 1];
+      if (lastUser?.role === 'user') {
+        history.pop();
+        if (activeChatObj) activeChatObj.messages = history.slice();
+        renderConversation();
+        runTurn(lastUser.content);
+      }
     });
     actions.querySelector('[data-act="speak"]').addEventListener('click', () => {
       try {
-        const u = new SpeechSynthesisUtterance(text);
-        u.rate = 0.6;
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(finalText);
+        u.rate = 1.1;
         window.speechSynthesis.speak(u);
-      } catch(e) {}
+      } catch(e){}
     });
 
-    history.push({ role: 'assistant', content: text });
+    history.push({ role: 'assistant', content: finalText });
+    if (activeChatObj) {
+      activeChatObj.messages = history.slice();
+      saveState();
+      // auto-title new chat after first exchange
+      if (history.length === 2 && activeChatObj.title.length < 42) {
+        const t = userText.slice(0, 38) + (userText.length > 38 ? '…' : '');
+        activeChatObj.title = t;
+        saveState();
+        renderChatList();
+      }
+    }
 
     busy = false;
-    sendBtn.disabled = !input.value.trim();
+    setSendMode('send');
     input.focus();
-  }
-
-  function sleep(ms) {
-    return new Promise(r => setTimeout(r, ms));
   }
 
   input.focus();
