@@ -1,6 +1,6 @@
 // Live Fortnite data via fortnite-api.com (community run, no key required).
 
-const TRIGGERS = /\b(fortnite|v[- ]?bucks|battle\s+royale|item\s+shop|zero[- ]?build|battle\s+pass|fncs|back\s*bling|pickaxe|glider|loading\s*screen|victory\s*royale|epic\s*games)\b/i;
+const TRIGGERS = /\b(fortnite|v[- ]?bucks|battle\s+royale|item\s+shop|zero[- ]?build|battle\s+pass|fncs|back\s*bling|pickaxe|glider|loading\s*screen|victory\s*royale)\b/i;
 // Also treat any "<Name> skin/outfit/emote" as a Fortnite question since those
 // are overwhelmingly a Fortnite usage of those words.
 // Non-greedy name capture with REQUIRED trailing type word, so "the Peely skin"
@@ -9,6 +9,8 @@ const SKIN_WORD = /\b([A-Z][a-zA-Z0-9][a-zA-Z0-9 .\-']{0,38}?)\s+(?:skin|outfit|
 const SKIN_HINT = /\b(?:about|tell me about|who is|what is|show me|look up)\s+(?:the\s+)?["'`]?([A-Z][a-zA-Z0-9][a-zA-Z0-9 .\-']{0,38}?)["'`]?\s+(?:skin|outfit|cosmetic|back\s*bling|pickaxe|glider|emote|wrap|loading\s*screen)\b/;
 const SHOP_HINT = /\b(shop|item\s*shop|for\s*sale|buy|cost|price|featured)\b/i;
 const NEWS_HINT = /\b(news|update|patch|chapter\s*\d|season\s*\d|new)\b/i;
+const STATUS_HINT = /\b(status|down(time)?|maintenance|servers|outage|offline|up|working|dev(eloper)?\s*(hour|time|status|update|downtime))\b/i;
+const VERSION_HINT = /\b(version|build|aes|key|current\s*season|chapter|season)\b/i;
 
 const UA = 'ChadGPT/1.0 (+https://chadgpt.pages.dev)';
 
@@ -22,6 +24,8 @@ export function detect(text) {
     searchName,
     wantShop: SHOP_HINT.test(text),
     wantNews: NEWS_HINT.test(text),
+    wantStatus: STATUS_HINT.test(text),
+    wantVersion: VERSION_HINT.test(text),
   };
 }
 
@@ -71,20 +75,52 @@ function fmtNews(d) {
   }).join('\n');
 }
 
+function fmtStatus(d) {
+  if (!d) return '';
+  const cs = d.components || [];
+  const fortnite = cs.filter(c => /fortnite/i.test(c.name));
+  const lines = [];
+  if (d.status?.description) lines.push(`Epic Games overall: ${d.status.description}`);
+  for (const c of fortnite.slice(0, 10)) {
+    lines.push(`- ${c.name}: ${c.status} (updated ${c.updated_at?.slice(0,16).replace('T',' ') || '?'} UTC)`);
+  }
+  const incidents = (d.incidents || []).filter(i => /fortnite/i.test(i.name || i.components?.map(x=>x.name).join(' ') || '')).slice(0, 3);
+  if (incidents.length) {
+    lines.push('Active Fortnite incidents:');
+    for (const i of incidents) lines.push(`- ${i.name} [${i.status}] — ${i.created_at?.slice(0,16).replace('T',' ') || '?'} UTC`);
+  }
+  const upcoming = (d.scheduled_maintenances || []).filter(m => /fortnite/i.test(m.name || '')).slice(0, 3);
+  if (upcoming.length) {
+    lines.push('Upcoming Fortnite maintenance / downtime:');
+    for (const m of upcoming) lines.push(`- ${m.name} from ${m.scheduled_for?.slice(0,16).replace('T',' ')} to ${m.scheduled_until?.slice(0,16).replace('T',' ')} UTC`);
+  }
+  return lines.length ? 'Fortnite service status (status.epicgames.com):\n' + lines.join('\n') : '';
+}
+
+function fmtAes(d) {
+  const buildId = d?.data?.build || d?.data?.version;
+  const main = d?.data?.mainKey;
+  if (!buildId && !main) return '';
+  return `Current Fortnite build: ${buildId || 'unknown'}${main ? ' · AES key present (updated when a new build ships)' : ''}`;
+}
+
 export async function fetchContext(hint) {
   const tasks = [];
   if (hint.searchName) {
-    // Narrow to outfit by default — keeps response small (~18KB vs 35KB) and
-    // returns the primary skin instead of unrelated back blings / emotes.
     const url = `https://fortnite-api.com/v2/cosmetics/br/search/all?name=${encodeURIComponent(hint.searchName)}&matchMethod=contains&type=outfit`;
     tasks.push(fetchJson(url, 9000).then(d => fmtSearch(hint.searchName, d)));
   }
-  // Include shop unless the question is purely about a specific skin
-  if (hint.wantShop || !hint.searchName) {
+  if (hint.wantShop || (!hint.searchName && !hint.wantStatus && !hint.wantVersion)) {
     tasks.push(fetchJson('https://fortnite-api.com/v2/shop').then(fmtShop));
   }
   if (hint.wantNews) {
     tasks.push(fetchJson('https://fortnite-api.com/v2/news/br').then(fmtNews));
+  }
+  if (hint.wantStatus) {
+    tasks.push(fetchJson('https://status.epicgames.com/api/v2/summary.json').then(fmtStatus));
+  }
+  if (hint.wantVersion || hint.wantStatus) {
+    tasks.push(fetchJson('https://fortnite-api.com/v2/aes').then(fmtAes));
   }
   const parts = (await Promise.all(tasks)).filter(Boolean);
   return parts.join('\n\n');

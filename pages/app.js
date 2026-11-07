@@ -178,8 +178,11 @@ const defaultState = {
   activeChat: null,
   plan: 'free',   // 'free' | 'plus'
   usage: { score: 100, lastAt: Date.now() },
-  settings: { chadMode: true, blockJailbreak: true, temperature: 0.6, autoScroll: true },
+  settings: { chadMode: true, temperature: 0.6, autoScroll: true },
 };
+// Jailbreak blocking is permanently on and is not stored in user settings.
+// It runs client-side on every submit and is also enforced server-side.
+const BLOCK_JAILBREAK = true;
 function loadState() {
   try {
     const raw = localStorage.getItem('chadgpt_state_v3');
@@ -492,10 +495,10 @@ function submit() {
   const text = input.value.trim();
   if ((!text && !pendingAttachments.length) || busy) return;
 
-  // Jailbreak gate
-  if (state.settings.blockJailbreak) {
+  // Jailbreak gate — always on, cannot be disabled. Enforced server-side too.
+  if (BLOCK_JAILBREAK) {
     const hit = looksLikeJailbreak(text);
-    if (hit) { toast({ title: `Blocked: jailbreak-like text ("${hit.slice(0,60)}"). Settings → disable to override.` }, 5500, 'err'); return; }
+    if (hit) { toast({ title: `Blocked: jailbreak-like text ("${hit.slice(0,60)}"). This guard is always on.` }, 5500, 'err'); return; }
   }
 
   // Usage gate
@@ -1157,8 +1160,8 @@ function openSettings() {
         <button class="toggle ${state.settings.chadMode?'on':''}" data-k="chadMode"></button>
       </div>
       <div class="setting_row">
-        <div><div class="setting_label">Block jailbreak attempts</div><div class="setting_sub">Scan input + files for DAN, ignore-previous, [SYSTEM], etc.</div></div>
-        <button class="toggle ${state.settings.blockJailbreak?'on':''}" data-k="blockJailbreak"></button>
+        <div><div class="setting_label">Block jailbreak attempts</div><div class="setting_sub">DAN, ignore-previous, [SYSTEM], grandma, etc. Always on, cannot be disabled. Enforced client-side AND server-side.</div></div>
+        <div style="font-family:var(--mono);font-size:12px;color:var(--ok);font-weight:600">LOCKED ON</div>
       </div>
       <div class="setting_row">
         <div><div class="setting_label">Auto scroll</div></div>

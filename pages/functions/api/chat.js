@@ -2,12 +2,44 @@ import { getAuthedUser, mintWorkerToken, userCanUseChatModel, json, unauthorized
 import { enrich } from '../_lib/enrichers.js';
 import { route as moeRoute } from '../_lib/router.js';
 
+// Server-side jailbreak gate — client can't disable this by editing JS.
+const JAILBREAK_PATTERNS = [
+  /ignore\s+(all\s+|the\s+|your\s+|any\s+)*(previous|prior|above|earlier)\s+(instructions?|prompts?|rules?)/i,
+  /disregard\s+(all\s+|the\s+|your\s+)*(instructions?|rules?|guidelines?)/i,
+  /forget\s+(everything|all\s+(previous|above)|your\s+(rules|instructions))/i,
+  /you\s+are\s+(now\s+)?(DAN|BasedGPT|AIM|STAN|DUDE|JAILBREAK|evil[-\s]?gpt)/i,
+  /(do\s+anything\s+now|DAN\s+mode|developer\s+mode|god\s+mode|unrestricted\s+mode|jailbreak\s+mode)/i,
+  /pretend\s+(you|to\s+be|that\s+you).{0,40}(no\s+restrictions|unrestricted|no\s+rules|no\s+limits)/i,
+  /act\s+as\s+(an?\s+)?(unrestricted|uncensored|unfiltered|amoral|jailbroken)/i,
+  /\[(SYSTEM|INST|ADMIN|SUDO)\]|\<\|im_start\|\>|\<\|system\|\>/i,
+  /override\s+(your\s+)?(safety|guidelines|rules|instructions)/i,
+  /bypass\s+(your\s+)?(restrictions|safety|guidelines|filters)/i,
+  /(my|a)\s+(dead\s+|late\s+)?(grandma|grandmother).{0,80}(tell|read|recite|bedtime|used\s+to)/i,
+  /from\s+now\s+on\s+you\s+(will|must|are)\s+(ignore|disregard|act|behave|pretend)/i,
+  /reveal\s+(your|the)\s+(system\s+prompt|instructions|hidden\s+rules)/i,
+];
+function detectJailbreakServer(text) {
+  if (!text) return null;
+  for (const re of JAILBREAK_PATTERNS) { const m = text.match(re); if (m) return m[0]; }
+  return null;
+}
+
 export async function onRequestPost({ request, env }) {
   const user = await getAuthedUser(request, env);
   if (!user) return unauthorized('please sign in');
 
   let body;
   try { body = await request.json(); } catch { return json({ error: 'invalid JSON' }, { status: 400 }); }
+
+  // Server-side jailbreak enforcement — scan all user messages, not just last
+  if (Array.isArray(body.messages)) {
+    for (const m of body.messages) {
+      if (m?.role === 'user' && typeof m.content === 'string') {
+        const hit = detectJailbreakServer(m.content);
+        if (hit) return json({ error: 'request blocked', detail: `jailbreak-pattern: "${hit.slice(0, 80)}"` }, { status: 400 });
+      }
+    }
+  }
 
   const requestedModel = body.model || 'fast';
 
