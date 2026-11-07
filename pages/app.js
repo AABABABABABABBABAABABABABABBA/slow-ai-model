@@ -60,6 +60,17 @@ async function doLogout() {
   await apiFetch('/logout', { method: 'POST' });
   currentUser = null;
 }
+let serverUsage = null;
+async function fetchServerUsage() {
+  try {
+    const r = await apiFetch('/usage', { method: 'GET' });
+    if (!r.ok) return null;
+    const j = await r.json();
+    serverUsage = j;
+    return j;
+  } catch { return null; }
+}
+
 async function doUpgrade(targetPlan) {
   const r = await apiFetch('/upgrade', { method: 'POST', body: JSON.stringify({ plan: targetPlan }) });
   const j = await r.json().catch(() => ({}));
@@ -265,14 +276,30 @@ function renderChatMeter() {
 setInterval(() => { regenUsage(); renderUsageBadge(); saveState(); }, 15000);
 
 // ---------- models ----------------------
-// 'auto' is the Chad MoE: router picks an expert per message.
-// All chat models are free. ChadCoder, image gen, and vision are Plus-only.
+// 'auto' is the Chad MoE. Everything else is a direct pick, grouped by tier.
+// tier: 'free' unlimited for all; 'pro' Plus only, 50/day 300/week;
+// 'ultra' Plus only, 15/day 75/week.
 const MODELS = [
-  { id: 'auto',     worker: 'chat',  apiModel: 'auto',  name: 'Chad MoE',  sub: 'auto', desc: 'Router picks the best expert per message' },
-  { id: 'fast',     worker: 'chat',  apiModel: 'fast',  name: 'ChadGPT',   sub: 'fast', desc: 'Llama 3.1 8B · default, snappy' },
-  { id: 'small',    worker: 'chat',  apiModel: 'small', name: 'ChadGPT',   sub: '3B',   desc: 'Llama 3.2 3B · balanced creative' },
-  { id: 'tiny',     worker: 'chat',  apiModel: 'tiny',  name: 'ChadGPT',   sub: '1B',   desc: 'Llama 3.2 1B · fastest + cheapest' },
-  { id: 'chadcoder',worker: 'code',  apiModel: 'deepseek', name: 'ChadCoder', sub: '6.7B', desc: 'DeepSeek Coder · code specialist' },
+  { id: 'auto',         worker: 'chat', apiModel: 'auto',     tier: 'free',  name: 'Chad MoE',       sub: 'auto', desc: 'Router picks the best expert per message' },
+  // free
+  { id: 'fast',         worker: 'chat', apiModel: 'fast',     tier: 'free',  name: 'ChadGPT Fast',   sub: '8B',   desc: 'Llama 3.1 8B fast · snappy default' },
+  { id: 'small',        worker: 'chat', apiModel: 'small',    tier: 'free',  name: 'ChadGPT Small',  sub: '3B',   desc: 'Llama 3.2 3B · creative' },
+  { id: 'tiny',         worker: 'chat', apiModel: 'tiny',     tier: 'free',  name: 'ChadGPT Tiny',   sub: '1B',   desc: 'Llama 3.2 1B · fastest' },
+  { id: 'mistral',      worker: 'chat', apiModel: 'mistral',  tier: 'free',  name: 'Mistral 7B',     sub: '',     desc: 'Mistral 7B Instruct' },
+  { id: 'gemma',        worker: 'chat', apiModel: 'gemma',    tier: 'free',  name: 'Gemma 7B',       sub: '',     desc: 'Google Gemma 7B' },
+  { id: 'openchat',     worker: 'chat', apiModel: 'openchat', tier: 'free',  name: 'OpenChat 3.5',   sub: '',     desc: 'OpenChat 3.5 0106' },
+  { id: 'phi',          worker: 'chat', apiModel: 'phi',      tier: 'free',  name: 'Phi-2',          sub: '',     desc: 'Microsoft Phi-2' },
+  // pro  — Plus only, 50/day 300/week
+  { id: 'llama-3',      worker: 'chat', apiModel: 'llama-3',  tier: 'pro',   name: 'Llama 3 8B',     sub: '',     desc: 'Llama 3 8B Instruct · the classic' },
+  { id: 'hermes',       worker: 'chat', apiModel: 'hermes',   tier: 'pro',   name: 'Hermes 2 Pro',   sub: '7B',   desc: 'Hermes 2 Pro Mistral · fine-tuned for agents' },
+  { id: 'qwen-14b',     worker: 'chat', apiModel: 'qwen-14b', tier: 'pro',   name: 'Qwen 1.5',       sub: '14B',  desc: 'Qwen 1.5 14B Chat' },
+  { id: 'gemma-12b',    worker: 'chat', apiModel: 'gemma-12b',tier: 'pro',   name: 'Gemma 3',        sub: '12B',  desc: 'Google Gemma 3 12B' },
+  { id: 'mistral-24b',  worker: 'chat', apiModel: 'mistral-24b', tier: 'pro', name: 'Mistral Small', sub: '24B',  desc: 'Mistral Small 3.1 24B Instruct' },
+  { id: 'chadcoder',    worker: 'code', apiModel: 'deepseek', tier: 'pro',   name: 'ChadCoder',      sub: '6.7B', desc: 'DeepSeek Coder 6.7B · code specialist' },
+  // ultra — Plus only, 15/day 75/week
+  { id: 'llama-70b',    worker: 'chat', apiModel: 'llama-70b',tier: 'ultra', name: 'Llama 3.3',      sub: '70B',  desc: 'Llama 3.3 70B fp8 fast · flagship' },
+  { id: 'deepseek-r1',  worker: 'chat', apiModel: 'deepseek-r1', tier: 'ultra', name: 'DeepSeek R1', sub: '32B',  desc: 'DeepSeek R1 Distill Qwen 32B · reasoning' },
+  { id: 'qwen-coder',   worker: 'chat', apiModel: 'qwen-coder', tier: 'ultra', name: 'Qwen2.5 Coder', sub: '32B', desc: 'Qwen 2.5 Coder 32B · heavyweight code' },
 ];
 function modelObj() { return MODELS.find(m => m.id === state.model) || MODELS[0]; }
 
@@ -694,7 +721,12 @@ async function runChatTurn(userText, attachments, opts) {
     }
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
-      errText = j.error || `${res.status} ${res.statusText}`;
+      if (res.status === 429 && j?.error === 'usage_limit_reached') {
+        openUsageLimitModal(j);
+        errText = `${j.tier} ${j.scope} limit reached (${j.used}/${j.limit}). Resets ${new Date(j.resets_at).toLocaleString()}.`;
+      } else {
+        errText = j.error || `${res.status} ${res.statusText}`;
+      }
     } else {
       for await (const chunk of sseLines(res)) {
         if (typeof chunk.response === 'string') {
@@ -1040,26 +1072,34 @@ modelBtn.addEventListener('click', () => {
   const auto = MODELS[0];
   items.push({
     title: auto.name + ' · ' + auto.sub,
-    sub: auto.desc + (state.plan === 'plus' ? ' (incl. coder)' : ' (free pool)'),
+    sub: auto.desc,
     selected: state.model === 'auto',
     onClick: () => { state.model = 'auto'; saveState(); updateModelPicker(); toast({ title: 'Chad MoE engaged — router picks per message' }, 2500, 'ok'); },
   });
-  items.push('-');
-  items.push({ label: 'Manual pick' });
-  const plusModels = new Set(['chadcoder']);
-  for (const m of MODELS.slice(1)) {
-    const needsPlus = plusModels.has(m.id);
-    const locked = needsPlus && state.plan !== 'plus';
-    items.push({
-      title: m.name + (m.sub ? ' ' + m.sub : '') + (needsPlus ? ' · Plus' : ''),
-      sub: locked ? 'Requires Plus · click to upgrade' : m.desc,
-      selected: state.model === m.id,
-      onClick: () => {
-        if (locked) { openPaywallModal(`${m.name} ${m.sub} requires Plus`); return; }
-        state.model = m.id; saveState(); updateModelPicker();
-        toast({ title: 'Switched to ' + m.name + ' ' + m.sub }, 2200, 'ok');
-      },
-    });
+  const byTier = { free: [], pro: [], ultra: [] };
+  for (const m of MODELS.slice(1)) byTier[m.tier].push(m);
+  const tierSections = [
+    { key: 'free',  label: 'Free · unlimited' },
+    { key: 'pro',   label: 'Pro · Plus (50/day · 300/week)' },
+    { key: 'ultra', label: 'Ultra · Plus (15/day · 75/week)' },
+  ];
+  for (const sec of tierSections) {
+    if (!byTier[sec.key].length) continue;
+    items.push('-');
+    items.push({ label: sec.label });
+    for (const m of byTier[sec.key]) {
+      const locked = m.tier !== 'free' && state.plan !== 'plus';
+      items.push({
+        title: m.name + (m.sub ? ' ' + m.sub : ''),
+        sub: locked ? 'Requires Plus · click to upgrade' : m.desc,
+        selected: state.model === m.id,
+        onClick: () => {
+          if (locked) { openPaywallModal(`${m.name}${m.sub ? ' ' + m.sub : ''} requires Plus`); return; }
+          state.model = m.id; saveState(); updateModelPicker();
+          toast({ title: 'Switched to ' + m.name + (m.sub ? ' ' + m.sub : '') }, 2200, 'ok');
+        },
+      });
+    }
   }
   openPopover(modelBtn, items);
 });
@@ -1079,26 +1119,75 @@ profileBtn.addEventListener('click', () => {
     { title: 'Clear all chats', onClick: () => { state.chats = []; saveState(); renderChatList(); setActiveChat(null); toast({ title: 'Cleared' }, 1500, 'ok'); } },
   ], 'right');
 });
-document.getElementById('usage_badge').addEventListener('click', () => {
-  openModal('Your usage', (p) => {
-    regenUsage(); renderUsageBadge(); saveState();
-    const s = Math.round(state.usage.score);
+document.getElementById('usage_badge').addEventListener('click', openUsageModal);
+
+async function openUsageModal() {
+  openModal('Your usage', async (p) => {
+    p.innerHTML = '<div style="text-align:center;color:var(--muted);padding:20px">Loading…</div>';
+    const u = await fetchServerUsage();
+    if (!u) {
+      p.innerHTML = '<div style="color:var(--danger);padding:20px">Failed to load usage data.</div>';
+      return;
+    }
+    const tierLabel = { free: 'Free · unlimited', pro: 'Pro · Plus', ultra: 'Ultra · Plus' };
+    const rows = ['free', 'pro', 'ultra'].map(k => {
+      const t = u.tiers[k];
+      const dailyBar = t.daily_limit ? Math.min(100, Math.round(100 * t.daily_used / t.daily_limit)) : 0;
+      const weeklyBar = t.weekly_limit ? Math.min(100, Math.round(100 * t.weekly_used / t.weekly_limit)) : 0;
+      const dailyFill = dailyBar >= 100 ? 'var(--danger)' : dailyBar >= 80 ? '#f0b429' : 'var(--ok)';
+      const weeklyFill = weeklyBar >= 100 ? 'var(--danger)' : weeklyBar >= 80 ? '#f0b429' : 'var(--ok)';
+      return `
+        <div style="padding:12px 0;border-bottom:1px solid var(--divider)">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px">
+            <div style="font-weight:600;font-size:14px">${tierLabel[k]}</div>
+            <div style="font-family:var(--mono);font-size:12px;color:var(--muted)">
+              ${t.daily_limit === null ? 'unlimited' : `${t.daily_used}/${t.daily_limit} today · ${t.weekly_used}/${t.weekly_limit} this week`}
+            </div>
+          </div>
+          ${t.daily_limit !== null ? `
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+              <div style="width:60px;font-size:11px;color:var(--muted);font-family:var(--mono)">daily</div>
+              <div style="flex:1;height:6px;border-radius:3px;background:var(--border);overflow:hidden"><div style="height:100%;width:${dailyBar}%;background:${dailyFill}"></div></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="width:60px;font-size:11px;color:var(--muted);font-family:var(--mono)">weekly</div>
+              <div style="flex:1;height:6px;border-radius:3px;background:var(--border);overflow:hidden"><div style="height:100%;width:${weeklyBar}%;background:${weeklyFill}"></div></div>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }).join('');
     p.innerHTML = `
-      <div class="stats_grid">
-        <div class="stat_card"><div class="stat_label">Score</div><div class="stat_value">${s}/${USAGE_MAX}</div></div>
-        <div class="stat_card"><div class="stat_label">Plan</div><div class="stat_value" style="color:${state.plan==='plus'?'#9b6bd8':'var(--muted)'}">${state.plan.toUpperCase()}</div></div>
-        <div class="stat_card"><div class="stat_label">Regen</div><div class="stat_value">+${USAGE_REGEN_PER_MIN}/min</div></div>
-        <div class="stat_card"><div class="stat_label">Cost</div><div class="stat_value" style="font-size:14px">${USAGE_PER_1K_TOKENS} / 1k tokens${state.plan==='plus'?' × 0.4':''}</div></div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
+        <div style="font-size:14px"><b>${u.plan.toUpperCase()}</b> plan</div>
+        <div style="font-size:11px;color:var(--muted);font-family:var(--mono)">${u.day} · ${u.week}</div>
       </div>
-      <p style="font-size:13px;color:var(--muted);margin:6px 0">Usage drops as you chat. Duplicate messages cost <b style="color:var(--fg)">4× more</b>. Score regenerates ${USAGE_REGEN_PER_MIN} points per minute while you're idle. Starting a new chat does not reset it — but a new chat does reset the <b style="color:var(--fg)">${CHAT_TOKEN_BUDGET.toLocaleString()}-token</b> per-chat budget.</p>
-      <div class="setting_row"><div><div class="setting_label">Reset my usage</div><div class="setting_sub">Useful during testing</div></div><button class="btn_primary" id="rst">Reset to ${USAGE_MAX}</button></div>
+      ${rows}
+      <div style="margin-top:14px;font-size:12px;color:var(--muted);line-height:1.5">
+        Daily resets ${new Date(u.resets_daily_at).toLocaleString()}. Weekly resets ${new Date(u.resets_weekly_at).toLocaleString()}. All counters live in Cloudflare D1 — they survive logout and device changes.
+      </div>
+      ${u.plan === 'free' ? '<div style="margin-top:14px;text-align:right"><button class="btn_primary" id="u_upgrade">Upgrade to Plus</button></div>' : ''}
     `;
-    p.querySelector('#rst').addEventListener('click', () => {
-      state.usage = { score: USAGE_MAX, lastAt: Date.now() };
-      saveState(); renderUsageBadge(); closeModal();
-    });
+    const up = p.querySelector('#u_upgrade');
+    if (up) up.addEventListener('click', () => { closeModal(); openPaywallModal(); });
   });
-});
+}
+
+function openUsageLimitModal(info) {
+  openModal(`${info.tier.toUpperCase()} ${info.scope} limit reached`, (p) => {
+    const resets = new Date(info.resets_at).toLocaleString();
+    p.innerHTML = `
+      <p style="font-size:14px;line-height:1.6;margin:0 0 10px">You've used <b>${info.used} / ${info.limit}</b> ${info.tier}-tier messages ${info.scope === 'daily' ? 'today' : 'this week'}.</p>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 16px">This quota resets at <b style="color:var(--fg)">${resets}</b>. You can switch to a free-tier model in the meantime.</p>
+      <div style="display:flex;justify-content:flex-end;gap:8px">
+        <button class="btn_primary" style="background:transparent;color:var(--fg);border:1px solid var(--border)" id="ulm_close">OK</button>
+        <button class="btn_primary" id="ulm_pick">Pick a free model</button>
+      </div>
+    `;
+    p.querySelector('#ulm_close').addEventListener('click', closeModal);
+    p.querySelector('#ulm_pick').addEventListener('click', () => { state.model = 'fast'; saveState(); updateModelPicker(); closeModal(); });
+  });
+}
 
 function openPaywallModal(headline) {
   openModal(headline || 'Upgrade your plan', (p) => {

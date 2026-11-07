@@ -3,15 +3,26 @@
 // - Protected /chat endpoint. Accepts Workers AI streaming.
 // - Origin check, per-session rate limit via KV.
 
-// On Workers Paid the 10K daily neurons are free then $0.011/1K after. 8B
-// fast is the default again; cheaper models stay available if you want them.
 const DEFAULT_MODEL = '@cf/meta/llama-3.1-8b-instruct-fast';
 const ALLOWED_MODELS = {
-  'fast':   '@cf/meta/llama-3.1-8b-instruct-fast',  // Default
-  'small':  '@cf/meta/llama-3.2-3b-instruct',       // Lighter creative
-  'tiny':   '@cf/meta/llama-3.2-1b-instruct',       // Fastest / cheapest
-  'llama3': '@cf/meta/llama-3-8b-instruct',
-  'phi':    '@cf/microsoft/phi-2',
+  // free tier — no limits
+  'fast':         '@cf/meta/llama-3.1-8b-instruct-fast',
+  'small':        '@cf/meta/llama-3.2-3b-instruct',
+  'tiny':         '@cf/meta/llama-3.2-1b-instruct',
+  'mistral':      '@cf/mistral/mistral-7b-instruct-v0.1',
+  'gemma':        '@cf/google/gemma-7b-it',
+  'openchat':     '@cf/openchat/openchat-3.5-0106',
+  'phi':          '@cf/microsoft/phi-2',
+  // pro tier — Plus only, 50/day 300/week
+  'llama-3':      '@cf/meta/llama-3-8b-instruct',
+  'hermes':       '@cf/nousresearch/hermes-2-pro-mistral-7b',
+  'qwen-14b':     '@cf/qwen/qwen1.5-14b-chat-awq',
+  'gemma-12b':    '@cf/google/gemma-3-12b-it',
+  'mistral-24b':  '@cf/mistralai/mistral-small-3.1-24b-instruct',
+  // ultra tier — Plus only, 15/day 75/week
+  'llama-70b':    '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+  'deepseek-r1':  '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
+  'qwen-coder':   '@cf/qwen/qwen2.5-coder-32b-instruct',
 };
 
 const CHAD_SYSTEM = `You are Chad, the model behind ChadGPT. Direct, confident, informal. Answer the actual question without corporate hedging, disclaimers, or warnings the user didn't ask for. Keep responses tight and useful.

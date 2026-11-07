@@ -1,6 +1,8 @@
-import { getAuthedUser, mintWorkerToken, userCanUseChatModel, json, unauthorized, forbidden } from '../_lib/auth.js';
+import { getAuthedUser, mintWorkerToken, json, unauthorized, forbidden } from '../_lib/auth.js';
 import { enrich } from '../_lib/enrichers.js';
 import { route as moeRoute } from '../_lib/router.js';
+import { MODEL_CATALOG, tierForModel, planAllowsTier } from '../_lib/tiers.js';
+import { canUse, recordUsage } from '../_lib/usage.js';
 
 // Server-side jailbreak gate — client can't disable this by editing JS.
 const JAILBREAK_PATTERNS = [
@@ -50,14 +52,31 @@ export async function onRequestPost({ request, env }) {
     const text = typeof lastUser?.content === 'string' ? lastUser.content : '';
     routedTo = await moeRoute(text, { allowPlus: user.plan === 'plus' }, env);
     body.model = routedTo.model;
-    // Forward the expert's specialization prompt so the chat worker adds it
-    // as a role=system message after the Chad base prompt.
     if (routedTo.system) {
       body.system = routedTo.system + (body.system ? '\n\n' + body.system : '');
     }
-  } else {
-    if (!userCanUseChatModel(user, requestedModel)) {
-      return forbidden(`model "${requestedModel}" requires Plus`);
+  }
+
+  // ---- tier + usage gate (post-routing so MoE picks are also checked) ----
+  // If the MoE picked the code worker, use the 'chadcoder' catalog key for
+  // tier lookup since the chat worker's 'deepseek' alias isn't in MODEL_CATALOG.
+  const finalModelKey = routedTo?.worker === 'code' ? 'chadcoder' : (body.model || 'fast');
+  const tier = tierForModel(finalModelKey);
+  if (!planAllowsTier(user.plan, tier)) {
+    return forbidden(`${finalModelKey} is a ${tier}-tier model — Plus required`);
+  }
+  if (tier !== 'free') {
+    const gate = await canUse(env, user.id, tier);
+    if (!gate.ok) {
+      return json({
+        error: 'usage_limit_reached',
+        scope: gate.scope,
+        used: gate.used,
+        limit: gate.limit,
+        tier,
+        resets_at: gate.resets_at,
+        detail: `${tier} ${gate.scope} limit reached (${gate.used}/${gate.limit}). Resets ${gate.resets_at}.`,
+      }, { status: 429, headers: { 'Retry-After': String(Math.max(60, Math.floor((Date.parse(gate.resets_at) - Date.now()) / 1000))) } });
     }
   }
 
@@ -82,6 +101,12 @@ export async function onRequestPost({ request, env }) {
   // Pick which worker to call. MoE may route to the code worker.
   const targetUrl = routedTo?.worker === 'code' ? env.CODE_URL : env.CHAT_URL;
   if (!targetUrl) return json({ error: `${routedTo?.worker || 'chat'}_URL not configured` }, { status: 500 });
+
+  // Record BEFORE the upstream call. If upstream fails, we still count the
+  // attempt — simpler and matches how Claude counts failed sends toward quota.
+  if (tier !== 'free') {
+    await recordUsage(env, user.id, finalModelKey, tier, 0);
+  }
 
   const workerToken = await mintWorkerToken(env, request, user.id);
   const upstream = await fetch(targetUrl + '/chat', {

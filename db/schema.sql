@@ -43,3 +43,19 @@ CREATE TABLE IF NOT EXISTS containers (
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 CREATE INDEX IF NOT EXISTS idx_containers_user ON containers(user_id, status);
+
+-- Per-message usage log for Claude-style daily + weekly limits.
+-- One row per model call; we COUNT() over day_key / week_key to check budgets.
+CREATE TABLE IF NOT EXISTS usage_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  model_key TEXT NOT NULL,              -- 'fast', 'llama-70b', 'deepseek', etc.
+  tier TEXT NOT NULL,                   -- 'free' | 'pro' | 'ultra'
+  day_key TEXT NOT NULL,                -- 'YYYY-MM-DD' UTC
+  week_key TEXT NOT NULL,               -- 'YYYY-Www'  ISO week UTC
+  tokens INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_usage_daily  ON usage_log(user_id, tier, day_key);
+CREATE INDEX IF NOT EXISTS idx_usage_weekly ON usage_log(user_id, tier, week_key);
