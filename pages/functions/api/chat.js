@@ -44,15 +44,17 @@ export async function onRequestPost({ request, env }) {
   const requestedModel = body.model || 'fast';
 
   // ---- MoE auto routing ----
-  // If the client asks for "auto", classify the last user message and pick an
-  // expert from the pool. The picked expert may be on the chat worker OR the
-  // code worker — we proxy to whichever is right.
   let routedTo = null;
   if (requestedModel === 'auto') {
     const lastUser = body.messages?.filter(m => m.role === 'user').pop();
     const text = typeof lastUser?.content === 'string' ? lastUser.content : '';
     routedTo = await moeRoute(text, { allowPlus: user.plan === 'plus' }, env);
     body.model = routedTo.model;
+    // Forward the expert's specialization prompt so the chat worker adds it
+    // as a role=system message after the Chad base prompt.
+    if (routedTo.system) {
+      body.system = routedTo.system + (body.system ? '\n\n' + body.system : '');
+    }
   } else {
     if (!userCanUseChatModel(user, requestedModel)) {
       return forbidden(`model "${requestedModel}" requires Plus`);
@@ -101,9 +103,12 @@ export async function onRequestPost({ request, env }) {
   if (routedTo) {
     headers.set('X-Moe-Expert', routedTo.expert);
     headers.set('X-Moe-Label', routedTo.label);
-    headers.set('X-Moe-Reason', routedTo.reason);
-    headers.set('X-Moe-Via', routedTo.via);
-    headers.set('Access-Control-Expose-Headers', 'X-Moe-Expert,X-Moe-Label,X-Moe-Reason,X-Moe-Via,X-Enriched');
+    headers.set('X-Moe-Model', routedTo.modelName || '');
+    headers.set('X-Moe-Icon', routedTo.icon || 'chat');
+    headers.set('X-Moe-Reason', routedTo.reason || '');
+    headers.set('X-Moe-Confidence', String(routedTo.confidence || 0));
+    headers.set('X-Moe-Via', routedTo.via || '');
+    headers.set('Access-Control-Expose-Headers', 'X-Moe-Expert,X-Moe-Label,X-Moe-Model,X-Moe-Icon,X-Moe-Reason,X-Moe-Confidence,X-Moe-Via,X-Enriched');
   } else {
     headers.set('Access-Control-Expose-Headers', 'X-Enriched');
   }

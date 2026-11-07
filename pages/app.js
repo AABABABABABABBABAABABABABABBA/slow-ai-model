@@ -685,7 +685,10 @@ async function runChatTurn(userText, attachments, opts) {
       routeInfo = {
         expert: moeExpert,
         label: res.headers.get('x-moe-label') || moeExpert,
+        model: res.headers.get('x-moe-model') || '',
+        icon: res.headers.get('x-moe-icon') || 'chat',
         reason: res.headers.get('x-moe-reason') || '',
+        confidence: res.headers.get('x-moe-confidence') || '',
         via: res.headers.get('x-moe-via') || '',
       };
     }
@@ -710,17 +713,7 @@ async function runChatTurn(userText, attachments, opts) {
   body.innerHTML = renderMd(finalText);
   decorateCodeBlocks(body);
   if (routeInfo) {
-    const badge = document.createElement('div');
-    badge.className = 'moe_badge';
-    badge.innerHTML = `
-      <span class="moe_dot"></span>
-      <span class="moe_label"></span>
-      <span class="moe_sep">·</span>
-      <span class="moe_reason"></span>
-    `;
-    badge.querySelector('.moe_label').textContent = 'routed to ' + routeInfo.label;
-    badge.querySelector('.moe_reason').textContent = routeInfo.reason + (routeInfo.via ? ' · via ' + routeInfo.via : '');
-    body.appendChild(badge);
+    body.appendChild(renderMoeBadge(routeInfo));
   }
   addMessageActions(body, finalText);
 
@@ -743,6 +736,36 @@ async function runChatTurn(userText, attachments, opts) {
   busy = false;
   setSendMode('send');
   input.focus();
+}
+
+const MOE_ICONS = {
+  code:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
+  brain:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"/></svg>',
+  chart:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>',
+  pen:       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4v16h16v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
+  book:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>',
+  doc:       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
+  translate: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg>',
+  chat:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+  bolt:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
+};
+
+function renderMoeBadge(info) {
+  const wrap = document.createElement('div');
+  wrap.className = 'moe_badge';
+  const icon = MOE_ICONS[info.icon] || MOE_ICONS.chat;
+  const confidence = info.confidence ? ` · confidence ${info.confidence}` : '';
+  wrap.innerHTML = `
+    <span class="moe_icon">${icon}</span>
+    <span class="moe_meta">
+      <span class="moe_top"><span class="moe_label"></span><span class="moe_model"></span></span>
+      <span class="moe_sub"></span>
+    </span>
+  `;
+  wrap.querySelector('.moe_label').textContent = info.label;
+  wrap.querySelector('.moe_model').textContent = info.model ? ' · ' + info.model : '';
+  wrap.querySelector('.moe_sub').textContent = (info.reason || '') + confidence;
+  return wrap;
 }
 
 function addMessageActions(container, text) {
