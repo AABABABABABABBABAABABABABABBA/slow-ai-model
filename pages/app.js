@@ -52,7 +52,13 @@ async function doSignup(email, password) {
 async function doLogin(email, password) {
   const r = await apiFetch('/login', { method: 'POST', body: JSON.stringify({ email, password }) });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || `login failed (${r.status})`);
+  if (!r.ok) {
+    // Banned accounts get a dedicated message with the moderation note.
+    if (r.status === 403 && j.error === 'account banned') {
+      throw new Error(j.detail ? `Account banned — ${j.detail}` : 'Account banned.');
+    }
+    throw new Error(j.error || `login failed (${r.status})`);
+  }
   currentUser = j.user;
   return currentUser;
 }
@@ -1247,72 +1253,179 @@ async function openFounderAdmin() {
       return;
     }
     const j = await r.json();
-    const t = j.totals;
-    const rows = j.users.map(u => {
-      const planColor = u.plan === 'unlimited' ? '#9b6bd8' : u.plan === 'plus' ? '#2e7d32' : 'var(--muted)';
-      return `
-        <tr style="border-bottom:1px solid var(--divider)">
-          <td style="padding:8px 6px;font-size:13px">${u.email}</td>
-          <td style="padding:8px 6px;font-size:12px"><span style="color:${planColor};font-weight:600">${u.plan.toUpperCase()}</span></td>
-          <td style="padding:8px 6px;text-align:right;font-family:var(--mono);font-size:12px">$${u.cost_usd.toFixed(4)}</td>
-          <td style="padding:8px 6px;text-align:right;font-family:var(--mono);font-size:12px">${u.calls}</td>
-          <td style="padding:8px 6px;text-align:right">
-            ${u.plan === 'unlimited'
-              ? `<button class="btn_primary" style="padding:4px 10px;font-size:12px;background:#b23c3c" data-revoke="${u.email}">Revoke</button>`
-              : `<button class="btn_primary" style="padding:4px 10px;font-size:12px" data-grant="${u.email}">Grant</button>`}
-          </td>
-        </tr>
-      `;
-    }).join('');
+    renderFounderAdmin(p, j);
+  });
+}
+
+function badgeFor(u) {
+  if (u.banned) return '<span style="background:#b23c3c;color:#fff;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;margin-left:4px">BANNED</span>';
+  if (u.muted)  return '<span style="background:#c47a0f;color:#fff;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;margin-left:4px">MUTED</span>';
+  return '';
+}
+
+function planBadge(plan) {
+  const c = plan === 'unlimited' ? '#9b6bd8' : plan === 'plus' ? '#2e7d32' : 'var(--muted)';
+  return `<span style="color:${c};font-weight:600">${plan.toUpperCase()}</span>`;
+}
+
+function renderFounderAdmin(p, j) {
+  const t = j.totals;
+  const rows = j.users.map(u => `
+    <tr data-email="${u.email}" style="border-bottom:1px solid var(--divider);${u.banned ? 'opacity:0.55' : ''}">
+      <td style="padding:8px 6px;font-size:13px">${u.email}${badgeFor(u)}${u.blocked_models?.length ? `<span style="background:#555;color:#fff;padding:2px 6px;border-radius:4px;font-size:10px;margin-left:4px">${u.blocked_models.length} model${u.blocked_models.length === 1 ? '' : 's'} blocked</span>` : ''}</td>
+      <td style="padding:8px 6px;font-size:12px">${planBadge(u.plan)}</td>
+      <td style="padding:8px 6px;text-align:right;font-family:var(--mono);font-size:12px">$${u.cost_usd.toFixed(4)}</td>
+      <td style="padding:8px 6px;text-align:right;font-family:var(--mono);font-size:12px">${u.calls}</td>
+      <td style="padding:8px 6px;text-align:right">
+        <button class="btn_primary" style="padding:4px 10px;font-size:12px" data-manage="${u.email}">Manage</button>
+      </td>
+    </tr>
+  `).join('');
+
+  const bannedCount = j.users.filter(u => u.banned).length;
+  const mutedCount = j.users.filter(u => u.muted).length;
+
+  p.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px">
+      <div style="padding:10px;border:1px solid var(--border);border-radius:8px">
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase">Users</div>
+        <div style="font-size:18px;font-weight:700;font-family:var(--mono)">${t.user_count}</div>
+      </div>
+      <div style="padding:10px;border:1px solid var(--border);border-radius:8px">
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase">Unlimited</div>
+        <div style="font-size:18px;font-weight:700;font-family:var(--mono)">${t.granted_count}</div>
+      </div>
+      <div style="padding:10px;border:1px solid var(--border);border-radius:8px">
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase">Banned · muted</div>
+        <div style="font-size:18px;font-weight:700;font-family:var(--mono)">${bannedCount} · ${mutedCount}</div>
+      </div>
+      <div style="padding:10px;border:1px solid var(--border);border-radius:8px">
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase">Your burden</div>
+        <div style="font-size:18px;font-weight:700;font-family:var(--mono)">$${t.founder_burden_usd.toFixed(4)}</div>
+      </div>
+    </div>
+    <div style="max-height:380px;overflow:auto;border:1px solid var(--border);border-radius:8px">
+      <table style="width:100%;border-collapse:collapse">
+        <thead style="background:var(--divider);position:sticky;top:0">
+          <tr>
+            <th style="padding:8px 6px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--muted)">Email</th>
+            <th style="padding:8px 6px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--muted)">Plan</th>
+            <th style="padding:8px 6px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--muted)">Cost</th>
+            <th style="padding:8px 6px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--muted)">Calls</th>
+            <th style="padding:8px 6px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--muted)"></th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div style="margin-top:10px;font-size:11px;color:var(--muted)">
+      Total cost across all users: <b style="font-family:var(--mono)">$${t.total_cost_usd.toFixed(4)}</b>. Click "Manage" on any row for ban / mute / plan / blocked-models / delete-chats controls.
+    </div>
+  `;
+
+  const byEmail = Object.fromEntries(j.users.map(u => [u.email, u]));
+  p.querySelectorAll('[data-manage]').forEach(btn => btn.addEventListener('click', () => {
+    const email = btn.getAttribute('data-manage');
+    openUserManage(byEmail[email]);
+  }));
+}
+
+async function openUserManage(u) {
+  openModal('Manage ' + u.email, (p) => {
+    const blocklist = (u.blocked_models || []).map(m => `
+      <li style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-family:var(--mono);font-size:12px">
+        ${m}
+        <button class="btn_primary" data-unblock="${m}" style="padding:2px 8px;font-size:11px;background:transparent;color:var(--fg);border:1px solid var(--border)">unblock</button>
+      </li>
+    `).join('') || '<li style="color:var(--muted);font-size:12px;padding:4px 0">no models blocked</li>';
+
+    const modelOpts = MODELS.filter(m => m.id !== 'auto').map(m => `<option value="${m.id}">${m.name}${m.sub ? ' ' + m.sub : ''}</option>`).join('');
 
     p.innerHTML = `
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
-        <div style="padding:10px;border:1px solid var(--border);border-radius:8px">
-          <div style="font-size:11px;color:var(--muted);text-transform:uppercase">Users</div>
-          <div style="font-size:18px;font-weight:700;font-family:var(--mono)">${t.user_count}</div>
-        </div>
-        <div style="padding:10px;border:1px solid var(--border);border-radius:8px">
-          <div style="font-size:11px;color:var(--muted);text-transform:uppercase">Unlimited grants</div>
-          <div style="font-size:18px;font-weight:700;font-family:var(--mono)">${t.granted_count}</div>
-        </div>
-        <div style="padding:10px;border:1px solid var(--border);border-radius:8px">
-          <div style="font-size:11px;color:var(--muted);text-transform:uppercase">Your burden</div>
-          <div style="font-size:18px;font-weight:700;font-family:var(--mono)">$${t.founder_burden_usd.toFixed(4)}</div>
-        </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;font-family:var(--mono)">
+        ${u.plan.toUpperCase()} · ${u.calls} calls · $${u.cost_usd.toFixed(4)}${u.granted_by ? ` · granted by ${u.granted_by}` : ''}
       </div>
-      <div style="max-height:360px;overflow:auto;border:1px solid var(--border);border-radius:8px">
-        <table style="width:100%;border-collapse:collapse">
-          <thead style="background:var(--divider);position:sticky;top:0">
-            <tr>
-              <th style="padding:8px 6px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--muted)">Email</th>
-              <th style="padding:8px 6px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--muted)">Plan</th>
-              <th style="padding:8px 6px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--muted)">Cost</th>
-              <th style="padding:8px 6px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--muted)">Calls</th>
-              <th style="padding:8px 6px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--muted)"></th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
+
+      <h4 style="font-size:13px;margin:0 0 6px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Plan</h4>
+      <div style="display:flex;gap:6px;margin-bottom:14px">
+        <button class="btn_primary" style="padding:6px 12px;font-size:12px;background:${u.plan === 'free' ? '#555' : 'var(--accent)'}" data-plan="free">Free</button>
+        <button class="btn_primary" style="padding:6px 12px;font-size:12px;background:${u.plan === 'plus' ? '#555' : '#2e7d32'}" data-plan="plus">Plus</button>
+        <button class="btn_primary" style="padding:6px 12px;font-size:12px;background:${u.plan === 'unlimited' ? '#555' : '#9b6bd8'}" data-plan="unlimited">Unlimited</button>
       </div>
-      <div style="margin-top:10px;font-size:11px;color:var(--muted)">
-        Total cost across all users: <b style="font-family:var(--mono)">$${t.total_cost_usd.toFixed(4)}</b>. Costs computed from Workers AI per-token pricing × estimated tokens per call.
+
+      <h4 style="font-size:13px;margin:0 0 6px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Moderation</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px">
+        <button class="btn_primary" style="padding:6px;font-size:12px;background:${u.banned ? '#555' : '#b23c3c'}" data-mod="${u.banned ? 'unban' : 'ban'}">${u.banned ? 'Unban account' : 'Ban account'}</button>
+        <button class="btn_primary" style="padding:6px;font-size:12px;background:${u.muted ? '#555' : '#c47a0f'}" data-mod="${u.muted ? 'unmute' : 'mute'}">${u.muted ? 'Allow messages' : 'Restrict messages'}</button>
+        <button class="btn_primary" style="padding:6px;font-size:12px;background:#4a6" data-mod="reset_usage">Reset usage counts</button>
+        <button class="btn_primary" style="padding:6px;font-size:12px;background:#b23c3c" data-mod="delete_chats">Delete all chats</button>
+      </div>
+
+      <h4 style="font-size:13px;margin:0 0 6px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Blocked models</h4>
+      <ul style="margin:0 0 8px;padding:0;list-style:none;border:1px solid var(--border);border-radius:6px;padding:8px 10px">${blocklist}</ul>
+      <div style="display:flex;gap:6px;margin-bottom:14px">
+        <select id="mod_pick" style="flex:1;padding:6px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--fg);font-size:12px">${modelOpts}</select>
+        <button class="btn_primary" style="padding:6px 12px;font-size:12px" id="mod_block_add">Block</button>
+      </div>
+
+      <h4 style="font-size:13px;margin:0 0 6px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em">Moderation note</h4>
+      <textarea id="mod_note" rows="2" placeholder="Shown to the user on refusal; e.g. 'spam, 3 strikes'" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--fg);font-size:12px;resize:vertical;font-family:inherit">${u.moderation_note || ''}</textarea>
+      <div style="display:flex;justify-content:flex-end;margin-top:6px"><button class="btn_primary" style="padding:4px 12px;font-size:12px" id="mod_save_note">Save note</button></div>
+
+      <div style="margin-top:14px;display:flex;justify-content:space-between">
+        <button class="btn_primary" style="background:transparent;color:var(--fg);border:1px solid var(--border);padding:6px 12px;font-size:12px" id="mod_back">&lt; Back to list</button>
       </div>
     `;
 
-    p.querySelectorAll('[data-grant]').forEach(btn => btn.addEventListener('click', async () => {
-      const email = btn.getAttribute('data-grant');
-      if (!confirm(`Grant unlimited to ${email}?`)) return;
-      const rr = await apiFetch('/admin/grant', { method: 'POST', body: JSON.stringify({ email, plan: 'unlimited' }) });
-      if (rr.ok) { toast({ title: 'Granted — unlimited for ' + email }, 3000, 'ok'); openFounderAdmin(); }
-      else toast({ title: 'Grant failed' }, 3000, 'err');
+    const refresh = async () => { closeModal(); await openFounderAdmin(); };
+    const callMod = async (action, extra = {}) => {
+      const rr = await apiFetch('/admin/moderate', { method: 'POST', body: JSON.stringify({ email: u.email, action, ...extra }) });
+      const jj = await rr.json().catch(() => ({}));
+      if (!rr.ok) { toast({ title: jj.error || 'Action failed' }, 3000, 'err'); return false; }
+      toast({ title: 'Done — ' + action }, 2500, 'ok');
+      return true;
+    };
+    const callGrant = async (plan) => {
+      const rr = await apiFetch('/admin/grant', { method: 'POST', body: JSON.stringify({ email: u.email, plan }) });
+      const jj = await rr.json().catch(() => ({}));
+      if (!rr.ok) { toast({ title: jj.error || 'Plan change failed' }, 3000, 'err'); return false; }
+      toast({ title: `${u.email} → ${plan}` }, 2500, 'ok');
+      return true;
+    };
+
+    p.querySelectorAll('[data-plan]').forEach(btn => btn.addEventListener('click', async () => {
+      const plan = btn.getAttribute('data-plan');
+      if (plan === u.plan) return;
+      if (!confirm(`Change ${u.email} from ${u.plan} to ${plan}?`)) return;
+      if (await callGrant(plan)) refresh();
     }));
-    p.querySelectorAll('[data-revoke]').forEach(btn => btn.addEventListener('click', async () => {
-      const email = btn.getAttribute('data-revoke');
-      if (!confirm(`Revoke unlimited from ${email}? They'll drop to free.`)) return;
-      const rr = await apiFetch('/admin/grant', { method: 'POST', body: JSON.stringify({ email, plan: 'free' }) });
-      if (rr.ok) { toast({ title: 'Revoked — ' + email + ' is now free' }, 3000, 'ok'); openFounderAdmin(); }
-      else toast({ title: 'Revoke failed' }, 3000, 'err');
+    p.querySelectorAll('[data-mod]').forEach(btn => btn.addEventListener('click', async () => {
+      const action = btn.getAttribute('data-mod');
+      const confirms = {
+        ban: 'Ban this account? They will be logged out and refused on sight.',
+        unban: 'Unban this account?',
+        mute: 'Restrict this account from sending new messages?',
+        unmute: 'Allow this account to send messages again?',
+        reset_usage: 'Wipe all usage-counter rows for this user? This frees their quota.',
+        delete_chats: 'Delete ALL chat history and container state for this user? Not reversible.',
+      };
+      if (!confirm(confirms[action] || 'Apply ' + action + '?')) return;
+      const note = p.querySelector('#mod_note')?.value;
+      if (await callMod(action, note ? { note } : {})) refresh();
     }));
+    p.querySelector('#mod_block_add').addEventListener('click', async () => {
+      const value = p.querySelector('#mod_pick').value;
+      if (await callMod('block_model', { value })) refresh();
+    });
+    p.querySelectorAll('[data-unblock]').forEach(btn => btn.addEventListener('click', async () => {
+      const value = btn.getAttribute('data-unblock');
+      if (await callMod('unblock_model', { value })) refresh();
+    }));
+    p.querySelector('#mod_save_note').addEventListener('click', async () => {
+      const value = p.querySelector('#mod_note').value;
+      if (await callMod('set_note', { value })) toast({ title: 'Note saved' }, 2000, 'ok');
+    });
+    p.querySelector('#mod_back').addEventListener('click', () => { closeModal(); openFounderAdmin(); });
   });
 }
 

@@ -11,7 +11,11 @@ CREATE TABLE IF NOT EXISTS users (
   usage_score REAL NOT NULL DEFAULT 100,
   usage_last_at INTEGER NOT NULL DEFAULT 0,
   granted_by TEXT,                      -- email of founder who granted unlimited; NULL otherwise
-  granted_at INTEGER                    -- epoch ms when unlimited was granted
+  granted_at INTEGER,                   -- epoch ms when unlimited was granted
+  banned INTEGER NOT NULL DEFAULT 0,    -- 1 = login + all APIs refuse
+  muted INTEGER NOT NULL DEFAULT 0,     -- 1 = can log in but /api/chat refuses
+  blocked_models TEXT NOT NULL DEFAULT '[]',  -- JSON array of model keys this user can't use
+  moderation_note TEXT                  -- founder's note on why
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);

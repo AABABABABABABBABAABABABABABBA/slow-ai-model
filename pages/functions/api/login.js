@@ -11,7 +11,7 @@ export async function onRequestPost({ request, env }) {
   if (!email || !password) return badRequest('email and password required');
 
   const row = await env.DB.prepare(
-    'SELECT id, email, password_hash, plan FROM users WHERE email = ?'
+    'SELECT id, email, password_hash, plan, banned, moderation_note FROM users WHERE email = ?'
   ).bind(email).first();
 
   if (!row) {
@@ -22,6 +22,11 @@ export async function onRequestPost({ request, env }) {
 
   const ok = await verifyPassword(password, row.password_hash);
   if (!ok) return unauthorized('invalid credentials');
+
+  // Banned accounts can't log in at all. Tell them why, briefly.
+  if (row.banned) {
+    return json({ error: 'account banned', detail: row.moderation_note || 'This account has been banned by the founder.' }, { status: 403 });
+  }
 
   const token = await mintUserJwt(env, { user_id: row.id, email: row.email, plan: row.plan });
   return json(

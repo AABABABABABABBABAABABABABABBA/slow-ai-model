@@ -135,19 +135,29 @@ export async function getAuthedUser(request, env) {
   const token = cookies[COOKIE_NAME];
   const claims = await verifyUserJwt(env, token);
   if (!claims) return null;
-  // The JWT carries the plan at issue time, but a founder grant / revoke
-  // happens in DB. Prefer the live row so unlimited takes effect immediately.
+  // The JWT carries the plan at issue time, but founder grants / bans happen
+  // in DB. Pull the live row so all moderation state takes effect immediately.
   let plan = claims.plan;
-  let granted_by = null;
+  let granted_by = null, banned = 0, muted = 0, blocked_models = [], moderation_note = null;
   if (env.DB) {
     try {
       const row = await env.DB.prepare(
-        'SELECT plan, granted_by FROM users WHERE id = ?'
+        'SELECT plan, granted_by, banned, muted, blocked_models, moderation_note FROM users WHERE id = ?'
       ).bind(claims.sub).first();
-      if (row) { plan = row.plan; granted_by = row.granted_by; }
+      if (row) {
+        plan = row.plan;
+        granted_by = row.granted_by;
+        banned = row.banned || 0;
+        muted = row.muted || 0;
+        moderation_note = row.moderation_note || null;
+        try { blocked_models = JSON.parse(row.blocked_models || '[]'); } catch { blocked_models = []; }
+      }
     } catch (_) {}
   }
-  return { id: claims.sub, email: claims.email, plan, granted_by, exp: claims.exp };
+  // Banned users are unauthed, period. Every caller that expects a user gets
+  // null here so the request is rejected like a logout.
+  if (banned) return null;
+  return { id: claims.sub, email: claims.email, plan, granted_by, muted, blocked_models, moderation_note, exp: claims.exp };
 }
 
 // Founder gate: only the registered founder email can call admin endpoints.

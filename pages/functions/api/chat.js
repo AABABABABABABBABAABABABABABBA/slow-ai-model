@@ -31,6 +31,12 @@ export async function onRequestPost({ request, env }) {
   const user = await getAuthedUser(request, env);
   if (!user) return unauthorized('please sign in');
 
+  // Muted accounts can read their chats but can't send. Keeps their
+  // history intact but stops new messages hitting the models.
+  if (user.muted) {
+    return forbidden(user.moderation_note || 'Your account has been restricted from sending messages.');
+  }
+
   let body;
   try { body = await request.json(); } catch { return json({ error: 'invalid JSON' }, { status: 400 }); }
 
@@ -65,6 +71,12 @@ export async function onRequestPost({ request, env }) {
   const tier = tierForModel(finalModelKey);
   if (!planAllowsTier(user.plan, tier)) {
     return forbidden(`${finalModelKey} is a ${tier}-tier model — Plus required`);
+  }
+  // Per-user model block takes precedence over everything else, even
+  // unlimited grants — the founder can revoke a single model from a user
+  // without downgrading their whole plan.
+  if (Array.isArray(user.blocked_models) && user.blocked_models.includes(finalModelKey)) {
+    return forbidden(`model '${finalModelKey}' is blocked on your account`);
   }
   // Unlimited plan skips quota checks but still has cost tracked.
   const skipQuota = planSkipsQuota(user.plan);

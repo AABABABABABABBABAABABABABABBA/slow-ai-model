@@ -13,6 +13,7 @@ export async function onRequestGet({ request, env }) {
   const rows = await env.DB.prepare(`
     SELECT
       u.id, u.email, u.plan, u.granted_by, u.granted_at, u.created_at,
+      u.banned, u.muted, u.blocked_models, u.moderation_note,
       COALESCE(SUM(l.cost_micro), 0) AS cost_micro,
       COUNT(l.id)                    AS calls,
       COALESCE(SUM(l.tokens), 0)     AS tokens
@@ -22,18 +23,26 @@ export async function onRequestGet({ request, env }) {
     ORDER BY cost_micro DESC
   `).all();
 
-  const users = (rows.results || []).map(r => ({
-    id: r.id,
-    email: r.email,
-    plan: r.plan,
-    granted_by: r.granted_by,
-    granted_at: r.granted_at,
-    created_at: r.created_at,
-    cost_micro: Number(r.cost_micro),
-    cost_usd: Number(r.cost_micro) / 1_000_000,
-    calls: Number(r.calls),
-    tokens: Number(r.tokens),
-  }));
+  const users = (rows.results || []).map(r => {
+    let blocked = [];
+    try { blocked = JSON.parse(r.blocked_models || '[]'); } catch { blocked = []; }
+    return {
+      id: r.id,
+      email: r.email,
+      plan: r.plan,
+      granted_by: r.granted_by,
+      granted_at: r.granted_at,
+      created_at: r.created_at,
+      banned: !!r.banned,
+      muted: !!r.muted,
+      blocked_models: blocked,
+      moderation_note: r.moderation_note,
+      cost_micro: Number(r.cost_micro),
+      cost_usd: Number(r.cost_micro) / 1_000_000,
+      calls: Number(r.calls),
+      tokens: Number(r.tokens),
+    };
+  });
 
   // Founder burden = everyone the founder granted unlimited to.
   const grantedUsers = users.filter(u => u.plan === 'unlimited');
