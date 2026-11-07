@@ -1596,7 +1596,10 @@ function openSettings() {
       </div>
       <div class="setting_row">
         <div><div class="setting_label">Account</div><div class="setting_sub">${currentUser?.email || 'not signed in'} · ${currentUser?.plan || 'free'}</div></div>
-        <button class="btn_primary" id="logout_btn" style="background:transparent;color:var(--fg);border:1px solid var(--border)">Log out</button>
+        <div style="display:flex;gap:6px">
+          <button class="btn_primary" id="pw_btn" style="background:transparent;color:var(--fg);border:1px solid var(--border)">Change password</button>
+          <button class="btn_primary" id="logout_btn" style="background:transparent;color:var(--fg);border:1px solid var(--border)">Log out</button>
+        </div>
       </div>
     `;
     p.querySelector('#theme_sel').value = state.theme;
@@ -1612,6 +1615,47 @@ function openSettings() {
       await doLogout();
       closeModal();
       showAuthGate('login');
+    });
+    const pw = p.querySelector('#pw_btn');
+    if (pw) pw.addEventListener('click', () => { closeModal(); openChangePasswordModal(); });
+  });
+}
+
+function openChangePasswordModal() {
+  openModal('Change password', (p) => {
+    p.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <label style="font-size:12px;color:var(--muted)">Current password
+          <input type="password" id="cp_cur" style="width:100%;margin-top:4px;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--fg);font-size:14px">
+        </label>
+        <label style="font-size:12px;color:var(--muted)">New password (min 8 chars)
+          <input type="password" id="cp_new" style="width:100%;margin-top:4px;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--fg);font-size:14px">
+        </label>
+        <label style="font-size:12px;color:var(--muted)">Confirm new password
+          <input type="password" id="cp_conf" style="width:100%;margin-top:4px;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--fg);font-size:14px">
+        </label>
+        <div id="cp_err" style="color:var(--danger);font-size:12px;min-height:16px"></div>
+        <div style="display:flex;justify-content:flex-end;gap:8px">
+          <button class="btn_primary" style="background:transparent;color:var(--fg);border:1px solid var(--border)" id="cp_cancel">Cancel</button>
+          <button class="btn_primary" id="cp_save">Save</button>
+        </div>
+      </div>
+    `;
+    const err = p.querySelector('#cp_err');
+    p.querySelector('#cp_cancel').addEventListener('click', closeModal);
+    p.querySelector('#cp_save').addEventListener('click', async () => {
+      err.textContent = '';
+      const cur = p.querySelector('#cp_cur').value;
+      const nxt = p.querySelector('#cp_new').value;
+      const cnf = p.querySelector('#cp_conf').value;
+      if (!cur || !nxt) { err.textContent = 'Fill both password fields.'; return; }
+      if (nxt.length < 8) { err.textContent = 'New password must be at least 8 characters.'; return; }
+      if (nxt !== cnf) { err.textContent = 'New password and confirmation do not match.'; return; }
+      const r = await apiFetch('/password', { method: 'POST', body: JSON.stringify({ current_password: cur, new_password: nxt }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { err.textContent = j.error || `Change failed (${r.status})`; return; }
+      closeModal();
+      toast({ title: 'Password changed' }, 2500, 'ok');
     });
   });
 }
