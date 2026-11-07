@@ -3,12 +3,14 @@
 // Hybrid: fast regex heuristics first (free + instant), fallback to a
 // 1B LLM classifier for the ambiguous middle. Always returns something.
 
+// Experts. "plus: true" means Plus users only — free users get downgraded to
+// the chat free tier (Llama 3.2 1B) which costs essentially zero neurons.
 const EXPERTS = {
   coder:    { worker: 'code', model: 'deepseek', label: 'ChadCoder',       desc: 'DeepSeek Coder 6.7B', plus: true },
-  reason:   { worker: 'chat', model: 'fast',     label: 'Llama 3.1 8B',    desc: 'reasoning + long-form' },
-  creative: { worker: 'chat', model: 'small',    label: 'Llama 3.2 3B',    desc: 'creative writing',  plus: true },
-  chat:     { worker: 'chat', model: 'fast',     label: 'Llama 3.1 8B',    desc: 'general chat' },
-  tiny:     { worker: 'chat', model: 'tiny',     label: 'Llama 3.2 1B',    desc: 'quick facts' },
+  reason:   { worker: 'chat', model: 'pro',      label: 'Llama 3.1 8B',    desc: 'reasoning + long-form', plus: true },
+  creative: { worker: 'chat', model: 'small',    label: 'Llama 3.2 3B',    desc: 'creative writing',      plus: true },
+  chat:     { worker: 'chat', model: 'fast',     label: 'Llama 3.2 1B',    desc: 'general chat (free)' },
+  tiny:     { worker: 'chat', model: 'fast',     label: 'Llama 3.2 1B',    desc: 'quick facts (free)' },
 };
 
 // ---- fast regex classifier ----
@@ -18,14 +20,13 @@ const RE_REASON    = /(\bsolve\b|\bprove\b|\bproof\b|\bequation\b|\bderivative\b
 const RE_TINY_HINT = /^(what\s+is|whats|what's|who\s+is|when\s+is|where\s+is|define|how\s+do\s+i|hi|hey|hello|yo|sup|thanks|ty|ok|cool)\b/i;
 
 export function heuristicRoute(text, { allowPlus = false } = {}) {
-  if (!text) return pick('chat', 'default');
+  if (!text) return pick('chat', 'default', allowPlus);
   const t = text.trim();
   if (RE_CODE.test(t))     return pick('coder',    'code pattern', allowPlus);
-  if (RE_REASON.test(t))   return pick('reason',   'reasoning / math pattern');
+  if (RE_REASON.test(t))   return pick('reason',   'reasoning / math pattern', allowPlus);
   if (RE_CREATIVE.test(t)) return pick('creative', 'creative writing pattern', allowPlus);
-  // Quick-answer short prompts under 60 chars starting with a canned pattern
-  if (t.length <= 60 && RE_TINY_HINT.test(t)) return pick('tiny', 'short factual');
-  return null; // ambiguous — fall through to LLM classifier
+  if (t.length <= 60 && RE_TINY_HINT.test(t)) return pick('tiny', 'short factual', allowPlus);
+  return null;
 }
 
 function pick(exp, reason, allowPlus = true) {

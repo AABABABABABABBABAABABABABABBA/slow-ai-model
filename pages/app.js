@@ -265,12 +265,13 @@ function renderChatMeter() {
 setInterval(() => { regenUsage(); renderUsageBadge(); saveState(); }, 15000);
 
 // ---------- models ----------------------
-// 'auto' is the Chad MoE: router picks an expert per message
+// 'auto' is the Chad MoE: router picks an expert per message.
+// 'fast' is the FREE tier default — Llama 3.2 1B. Virtually zero neuron cost.
 const MODELS = [
   { id: 'auto',     worker: 'chat',  apiModel: 'auto',     name: 'Chad MoE',  sub: 'auto',    desc: 'Router picks the best expert per message' },
-  { id: 'fast',     worker: 'chat',  apiModel: 'fast',     name: 'ChadGPT',   sub: 'fast',    desc: 'Llama 3.1 8B fast · free tier' },
-  { id: 'small',    worker: 'chat',  apiModel: 'small',    name: 'ChadGPT',   sub: 'small',   desc: 'Llama 3.2 3B · creative writing' },
-  { id: 'tiny',     worker: 'chat',  apiModel: 'tiny',     name: 'ChadGPT',   sub: 'tiny',    desc: 'Llama 3.2 1B · fastest' },
+  { id: 'fast',     worker: 'chat',  apiModel: 'fast',     name: 'ChadGPT',   sub: 'free',    desc: 'Llama 3.2 1B · always free' },
+  { id: 'pro',      worker: 'chat',  apiModel: 'pro',      name: 'ChadGPT',   sub: 'pro',     desc: 'Llama 3.1 8B · stronger reasoning' },
+  { id: 'small',    worker: 'chat',  apiModel: 'small',    name: 'ChadGPT',   sub: '3B',      desc: 'Llama 3.2 3B · balanced creative' },
   { id: 'chadcoder',worker: 'code',  apiModel: 'deepseek', name: 'ChadCoder', sub: '6.7B',    desc: 'DeepSeek Coder · code specialist' },
 ];
 function modelObj() { return MODELS.find(m => m.id === state.model) || MODELS[0]; }

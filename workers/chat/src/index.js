@@ -3,13 +3,16 @@
 // - Protected /chat endpoint. Accepts Workers AI streaming.
 // - Origin check, per-session rate limit via KV.
 
-const DEFAULT_MODEL = '@cf/meta/llama-3.1-8b-instruct-fast';
+// "fast" is the FREE tier default — Llama 3.2 1B is the smallest/cheapest model
+// on Workers AI. 10k free neurons/day covers ~millions of tokens on this one,
+// so free users effectively cost nothing.
+const DEFAULT_MODEL = '@cf/meta/llama-3.2-1b-instruct';
 const ALLOWED_MODELS = {
-  'fast':   '@cf/meta/llama-3.1-8b-instruct-fast',
-  'small':  '@cf/meta/llama-3.2-3b-instruct',
-  'tiny':   '@cf/meta/llama-3.2-1b-instruct',
-  'llama3': '@cf/meta/llama-3-8b-instruct',
-  'phi':    '@cf/microsoft/phi-2',
+  'fast':   '@cf/meta/llama-3.2-1b-instruct',       // Free
+  'small':  '@cf/meta/llama-3.2-3b-instruct',       // Plus
+  'pro':    '@cf/meta/llama-3.1-8b-instruct-fast',  // Plus
+  'llama3': '@cf/meta/llama-3-8b-instruct',         // Plus
+  'phi':    '@cf/microsoft/phi-2',                  // Plus
 };
 
 const CHAD_SYSTEM = `You are Chad, the model behind ChadGPT. Direct, confident, informal. Answer the actual question without corporate hedging, disclaimers, or warnings the user didn't ask for. Keep responses tight and useful.
