@@ -9,6 +9,13 @@ binding = "AI"
 [observability]
 enabled = true
 
+# Optional KV namespace to persist container session metadata across requests.
+# Create it with: npx wrangler kv namespace create SESSIONS
+# then paste the printed id here.
+# [[kv_namespaces]]
+# binding = "SESSIONS"
+# id = "<paste-id>"
+
 # Optional: set a custom domain after first deploy
 # [[routes]]
 # pattern = "chadcoder.example.com"

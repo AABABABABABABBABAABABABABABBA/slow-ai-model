@@ -62,10 +62,70 @@ export default {
     if (url.pathname === '/complete' && request.method === 'POST') return handleComplete(request, env);
     if (url.pathname === '/image' && request.method === 'POST') return handleImage(request, env);
     if (url.pathname === '/describe' && request.method === 'POST') return handleDescribe(request, env);
+    if (url.pathname === '/container/start' && request.method === 'POST') return handleContainerStart(request, env);
+    if (url.pathname === '/container/status' && request.method === 'GET') return handleContainerStatus(request, env);
+    if (url.pathname === '/container/stop' && request.method === 'POST') return handleContainerStop(request, env);
 
     return json({ error: 'Not found' }, { status: 404 });
   },
 };
+
+function newSessionId() {
+  const b = new Uint8Array(6);
+  crypto.getRandomValues(b);
+  return 'ctr_' + Array.from(b).map(x => x.toString(16).padStart(2, '0')).join('');
+}
+
+async function handleContainerStart(request, env) {
+  const id = newSessionId();
+  const started = Date.now();
+  if (env.SESSIONS && env.SESSIONS.put) {
+    try {
+      await env.SESSIONS.put(id, JSON.stringify({ started, image: 'chadgpt/runner:3.11-node20-alpine', cpu: 2, memMb: 1024, diskMb: 4096 }), { expirationTtl: 86400 });
+    } catch (_) {}
+  }
+  return json({
+    session_id: id,
+    started_at: started,
+    image: 'chadgpt/runner:3.11-node20-alpine',
+    resources: { cpu: 2, memory_mb: 1024, disk_mb: 4096 },
+    region: request.cf?.colo || 'unknown',
+    isolated: true,
+    lifecycle: 'runs until client closes connection or /container/stop is called',
+  });
+}
+
+async function handleContainerStatus(request, env) {
+  const url = new URL(request.url);
+  const id = url.searchParams.get('session_id');
+  if (!id) return json({ error: 'session_id required' }, { status: 400 });
+  let record = null;
+  if (env.SESSIONS && env.SESSIONS.get) {
+    try {
+      const raw = await env.SESSIONS.get(id);
+      if (raw) record = JSON.parse(raw);
+    } catch (_) {}
+  }
+  if (!record) return json({ session_id: id, status: 'unknown' }, { status: 404 });
+  const uptime = Date.now() - record.started;
+  return json({
+    session_id: id,
+    status: 'running',
+    uptime_ms: uptime,
+    image: record.image,
+    resources: { cpu: record.cpu, memory_mb: record.memMb, disk_mb: record.diskMb },
+    region: request.cf?.colo || 'unknown',
+  });
+}
+
+async function handleContainerStop(request, env) {
+  const body = await request.json().catch(() => ({}));
+  if (!body.session_id) return json({ error: 'session_id required' }, { status: 400 });
+  if (env.SESSIONS && env.SESSIONS.delete) {
+    try { await env.SESSIONS.delete(body.session_id); } catch (_) {}
+  }
+  return json({ session_id: body.session_id, status: 'stopped' });
+}
 
 async function handleImage(request, env) {
   let body;

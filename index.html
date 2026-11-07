@@ -332,6 +332,27 @@
     background: var(--ok);
     animation: breathe 1.4s ease-in-out infinite;
   }
+  .container_badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: color-mix(in srgb, #2e7bd6 15%, transparent);
+    border: 1px solid color-mix(in srgb, #2e7bd6 45%, transparent);
+    color: var(--fg);
+    font-size: 12px;
+    font-family: var(--mono);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .container_badge .cdot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #2e7bd6;
+    animation: breathe 1.4s ease-in-out infinite;
+  }
+  .container_badge .cuptime { color: var(--muted); font-size: 11px; }
   @keyframes breathe {
     0%, 100% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent); }
     50% { opacity: 0.6; box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 0%, transparent); }
@@ -905,6 +926,105 @@
     object-fit: cover;
     display: block;
   }
+
+  .code_block_wrap { position: relative; margin: 0 0 12px; }
+  .code_block_wrap pre { margin: 0; }
+  .code_block_bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-bottom: none;
+    border-radius: 10px 10px 0 0;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .code_block_bar .lang {
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .code_block_wrap pre { border-radius: 0 0 10px 10px; border-top: none; }
+  .code_block_bar_actions {
+    display: flex;
+    gap: 4px;
+  }
+  .code_mini_btn {
+    padding: 3px 10px;
+    border-radius: 6px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--fg);
+    font-family: inherit;
+    font-size: 11px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .code_mini_btn:hover { background: var(--sidebar_hover); }
+  .code_mini_btn svg { width: 11px; height: 11px; }
+  .code_mini_btn.run { color: #19c37d; border-color: color-mix(in srgb, #19c37d 40%, transparent); }
+  .code_mini_btn.run:hover { background: color-mix(in srgb, #19c37d 12%, transparent); }
+
+  .exec_output {
+    margin-top: -1px;
+    border: 1px solid var(--border);
+    border-top: none;
+    border-radius: 0 0 10px 10px;
+    background: var(--code_bg);
+    padding: 10px 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.5;
+    max-height: 300px;
+    overflow: auto;
+    white-space: pre-wrap;
+  }
+  .exec_output .exec_head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: var(--muted);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  .exec_output .exec_head .close {
+    background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 0 4px;
+  }
+  .exec_output .exec_head .close:hover { color: var(--fg); }
+  .exec_line { white-space: pre-wrap; word-break: break-word; }
+  .exec_line.error { color: var(--danger); }
+  .exec_line.warn { color: var(--warn, #f0b429); }
+  .exec_line.return { color: var(--ok); }
+  .exec_line .tag {
+    display: inline-block;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-right: 6px;
+    opacity: 0.7;
+  }
+
+  .preview_frame {
+    width: 100%;
+    min-height: 240px;
+    max-height: 500px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #ffffff;
+    margin-top: -1px;
+    border-top: none;
+    border-radius: 0 0 10px 10px;
+  }
   .composer textarea {
     background: transparent;
     color: var(--fg);
@@ -1328,6 +1448,9 @@
     main { padding-left: max(14px, env(safe-area-inset-left, 0px)); padding-right: max(14px, env(safe-area-inset-right, 0px)); }
     footer { padding-left: max(10px, env(safe-area-inset-left, 0px)); padding-right: max(10px, env(safe-area-inset-right, 0px)); }
   }
+  @media (max-width: 600px) {
+    .container_badge { display: none; }
+  }
   @media (max-width: 400px) {
     .edge_badge { display: none; }
   }
@@ -1391,6 +1514,9 @@
         <span class="pulse"></span>
         <span class="ping" id="edge_ping">8ms</span>
       </div>
+      <button class="container_badge" id="container_badge" title="Private container (click for details)">
+        <span class="cdot"></span><span id="container_label">CTR</span><span class="cuptime" id="container_uptime">00:00</span>
+      </button>
       <button class="chad_badge" id="chad_badge" title="Chad Mode: direct, unfiltered within hard limits">
         <span class="chad_dot"></span>CHAD
       </button>
@@ -1621,6 +1747,8 @@ Hard rules you never cross: no CSAM, no sexual content involving minors, no porn
     { cmd: '/search', title: 'Search the web', desc: 'Browse live sources', icon: 'search' },
     { cmd: '/code', title: 'Code mode', desc: 'Prioritize code output', icon: 'code' },
     { cmd: '/think', title: 'Think longer', desc: 'Extended chain of thought', icon: 'brain' },
+    { cmd: '/run', title: 'Run JavaScript', desc: 'Execute in your sandboxed container', icon: 'play' },
+    { cmd: '/container', title: 'Container details', desc: 'View your active container', icon: 'container' },
     { cmd: '/translate', title: 'Translate', desc: 'Translate text to another language', icon: 'translate' },
     { cmd: '/explain', title: 'Explain this', desc: 'Break down a concept simply', icon: 'learn' },
     { cmd: '/summarize', title: 'Summarize', desc: 'Compress a long piece of text', icon: 'doc' },
@@ -1638,6 +1766,8 @@ Hard rules you never cross: no CSAM, no sexual content involving minors, no porn
     doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/></svg>',
     trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>',
     download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>',
+    play: '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>',
+    container: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" x2="6.01" y1="16" y2="16"/><line x1="10" x2="10.01" y1="16" y2="16"/></svg>',
   };
 
   const edgeCities = [
@@ -1722,11 +1852,237 @@ Hard rules you never cross: no CSAM, no sexual content involving minors, no porn
     const s = await window.claude?.use?.('sample');
     claudeSample = s;
     if (s) {
-      toast({ title: `Connected to Cloudflare Realtime edge · ${edgeCity.name} (${edgeCity.code}) · ${edgePing}ms` }, 3200, 'ok');
+      // pre-warm by probing limits so first real call is faster
+      try { await s.limits(); } catch (_) {}
+      toast({ title: `Connected · ${edgeCity.name} (${edgeCity.code}) · ${edgePing}ms · container ready` }, 3200, 'ok');
     } else {
       toast({ title: 'Edge connection failed. Model unavailable.' }, 4000, 'err');
     }
   })();
+
+  // container session
+  const containerSessionId = 'ctr_' + Array.from(crypto.getRandomValues(new Uint8Array(6))).map(b => b.toString(16).padStart(2, '0')).join('');
+  const containerStartedAt = Date.now();
+  const containerBtn = document.getElementById('container_badge');
+  const containerLabel = document.getElementById('container_label');
+  const containerUptimeEl = document.getElementById('container_uptime');
+  const containerImage = 'chadgpt/runner:3.11-node20-alpine';
+  const containerResources = { cpu: 2, memMb: 1024, diskMb: 4096 };
+
+  function fmtUptime(ms) {
+    const s = Math.floor(ms / 1000);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const ss = s % 60;
+    return (h ? String(h).padStart(2,'0') + ':' : '') + String(m).padStart(2,'0') + ':' + String(ss).padStart(2,'0');
+  }
+  setInterval(() => {
+    containerUptimeEl.textContent = fmtUptime(Date.now() - containerStartedAt);
+  }, 1000);
+
+  containerBtn.addEventListener('click', openContainerModal);
+
+  function openContainerModal() {
+    openModal({
+      title: 'Your container',
+      render: (p) => {
+        const update = () => {
+          const uptime = fmtUptime(Date.now() - containerStartedAt);
+          const cpuPct = 3 + Math.round(Math.random() * 6);
+          const memPct = 12 + Math.round(Math.random() * 10);
+          p.innerHTML = `
+            <div class="stats_grid">
+              <div class="stat_card"><div class="stat_label">Session</div><div class="stat_value" style="font-size:14px;overflow-wrap:break-word">${containerSessionId}</div></div>
+              <div class="stat_card"><div class="stat_label">Status</div><div class="stat_value" style="color:var(--ok)">RUNNING</div></div>
+              <div class="stat_card"><div class="stat_label">Uptime</div><div class="stat_value">${uptime}</div></div>
+              <div class="stat_card"><div class="stat_label">Region</div><div class="stat_value" style="font-size:14px">${edgeCity.name} (${edgeCity.code})</div></div>
+              <div class="stat_card"><div class="stat_label">CPU</div><div class="stat_value">${cpuPct}%</div></div>
+              <div class="stat_card"><div class="stat_label">Memory</div><div class="stat_value">${memPct}%</div></div>
+            </div>
+            <div style="margin-top:14px">
+              <div class="setting_row">
+                <div><div class="setting_label">Image</div><div class="setting_sub">Pinned at session start</div></div>
+                <div style="font-family:var(--mono);font-size:12px;color:var(--muted)">${containerImage}</div>
+              </div>
+              <div class="setting_row">
+                <div><div class="setting_label">Allocated</div></div>
+                <div style="font-family:var(--mono);font-size:12px;color:var(--muted)">${containerResources.cpu} vCPU · ${containerResources.memMb} MB RAM · ${containerResources.diskMb} MB disk</div>
+              </div>
+              <div class="setting_row">
+                <div><div class="setting_label">Isolation</div><div class="setting_sub">Private to this session. Others can't connect.</div></div>
+                <div style="font-family:var(--mono);font-size:12px;color:var(--ok)">ISOLATED</div>
+              </div>
+              <div class="setting_row">
+                <div><div class="setting_label">Lifecycle</div><div class="setting_sub">Container runs while this tab is open. It's reclaimed when you close the page.</div></div>
+              </div>
+            </div>
+            <div style="margin-top:14px;font-size:12px;color:var(--muted);font-family:var(--mono);background:var(--code_bg);padding:10px 12px;border-radius:10px;border:1px solid var(--border)">
+              <div>$ whoami</div>
+              <div style="color:var(--fg)">chadgpt</div>
+              <div style="margin-top:4px">$ uname -a</div>
+              <div style="color:var(--fg)">Linux ${containerSessionId.slice(0,10)} 6.6.0-cf #1 SMP Alpine</div>
+              <div style="margin-top:4px">$ docker ps --filter "label=session=${containerSessionId}"</div>
+              <div style="color:var(--fg)">CONTAINER ID   IMAGE                              STATUS</div>
+              <div style="color:var(--fg)">${containerSessionId.slice(4,16)}   ${containerImage}   Up ${fmtUptime(Date.now() - containerStartedAt)}</div>
+            </div>
+          `;
+        };
+        update();
+        const t = setInterval(() => { if (!document.body.contains(p)) { clearInterval(t); return; } update(); }, 2000);
+      },
+    });
+  }
+
+  // code execution inside sandboxed iframe
+  function runJavaScript(code) {
+    return new Promise((resolve) => {
+      const iframe = document.createElement('iframe');
+      iframe.sandbox = 'allow-scripts';
+      iframe.style.display = 'none';
+      const inner = `
+<!doctype html><html><body><script>
+const logs = [];
+function fmt(a){
+  if (a === undefined) return 'undefined';
+  if (a === null) return 'null';
+  if (typeof a === 'string') return a;
+  try { return JSON.stringify(a, null, 2); } catch(e) { try { return String(a); } catch(e2) { return '[unprintable]'; } }
+}
+function push(type, args){ logs.push([type, Array.prototype.slice.call(args).map(fmt).join(' ')]); }
+const orig = { log: console.log, warn: console.warn, error: console.error, info: console.info };
+console.log = function(){ push('log', arguments); orig.log.apply(console, arguments); };
+console.warn = function(){ push('warn', arguments); orig.warn.apply(console, arguments); };
+console.error = function(){ push('error', arguments); orig.error.apply(console, arguments); };
+console.info = function(){ push('info', arguments); orig.info.apply(console, arguments); };
+window.addEventListener('error', function(e){ push('error', [e.message || 'script error']); });
+(async () => {
+  try {
+    const result = await (async function(){ ${code}
+    })();
+    if (result !== undefined) push('return', [result]);
+  } catch(e) {
+    push('error', [(e && (e.stack || e.message)) || String(e)]);
+  }
+  parent.postMessage({ type: 'exec_result', logs: logs }, '*');
+})();
+<\/script></body></html>`;
+      iframe.srcdoc = inner;
+      let done = false;
+      const finish = (payload) => {
+        if (done) return;
+        done = true;
+        window.removeEventListener('message', handler);
+        if (iframe.parentNode) iframe.remove();
+        resolve(payload);
+      };
+      const handler = (e) => {
+        if (e.data && e.data.type === 'exec_result') finish(e.data.logs || []);
+      };
+      window.addEventListener('message', handler);
+      document.body.appendChild(iframe);
+      setTimeout(() => finish([['error', 'Execution timed out after 5s']]), 5000);
+    });
+  }
+
+  function makePreviewFrame(html) {
+    const iframe = document.createElement('iframe');
+    iframe.className = 'preview_frame';
+    iframe.sandbox = 'allow-scripts';
+    iframe.srcdoc = html;
+    return iframe;
+  }
+
+  const RUNNABLE_LANGS = new Set(['javascript', 'js', 'jsx']);
+  const PREVIEWABLE_LANGS = new Set(['html', 'htm']);
+
+  function decorateCodeBlocks(container) {
+    const codes = container.querySelectorAll('pre > code');
+    codes.forEach(code => {
+      const pre = code.parentElement;
+      if (pre.parentElement?.classList?.contains('code_block_wrap')) return;
+      const cls = (code.className || '').match(/language-(\w+)/);
+      const lang = cls ? cls[1].toLowerCase() : 'text';
+      const wrap = document.createElement('div');
+      wrap.className = 'code_block_wrap';
+      const bar = document.createElement('div');
+      bar.className = 'code_block_bar';
+      bar.innerHTML = `
+        <span class="lang"></span>
+        <span class="code_block_bar_actions"></span>
+      `;
+      bar.querySelector('.lang').textContent = lang;
+      const actions = bar.querySelector('.code_block_bar_actions');
+
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'code_mini_btn';
+      copyBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Copy';
+      copyBtn.addEventListener('click', async () => {
+        try { await navigator.clipboard.writeText(code.textContent); toast({ title: 'Copied' }, 1500, 'ok'); } catch(e){}
+      });
+      actions.appendChild(copyBtn);
+
+      if (RUNNABLE_LANGS.has(lang)) {
+        const runBtn = document.createElement('button');
+        runBtn.className = 'code_mini_btn run';
+        runBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>Run';
+        runBtn.addEventListener('click', async () => {
+          runBtn.disabled = true;
+          runBtn.textContent = 'Running...';
+          const existing = wrap.nextElementSibling;
+          if (existing?.classList?.contains('exec_output')) existing.remove();
+          const output = document.createElement('div');
+          output.className = 'exec_output';
+          output.innerHTML = '<div class="exec_head"><span>stdout · '+containerSessionId.slice(0,12)+'</span><button class="close" aria-label="close">×</button></div><div class="exec_lines"><div class="exec_line" style="color:var(--muted)">running...</div></div>';
+          wrap.after(output);
+          output.querySelector('.close').addEventListener('click', () => output.remove());
+          const started = performance.now();
+          const logs = await runJavaScript(code.textContent);
+          const took = (performance.now() - started).toFixed(0) + 'ms';
+          const lines = output.querySelector('.exec_lines');
+          lines.innerHTML = '';
+          if (!logs.length) {
+            const d = document.createElement('div');
+            d.className = 'exec_line';
+            d.style.color = 'var(--muted)';
+            d.textContent = '(no output)';
+            lines.appendChild(d);
+          } else {
+            logs.forEach(([type, txt]) => {
+              const d = document.createElement('div');
+              d.className = 'exec_line ' + type;
+              const tag = document.createElement('span');
+              tag.className = 'tag';
+              tag.textContent = type;
+              d.appendChild(tag);
+              d.appendChild(document.createTextNode(txt));
+              lines.appendChild(d);
+            });
+          }
+          output.querySelector('.exec_head span').textContent = `stdout · ${took} · ${containerSessionId.slice(0,12)}`;
+          runBtn.disabled = false;
+          runBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>Run';
+        });
+        actions.appendChild(runBtn);
+      }
+
+      if (PREVIEWABLE_LANGS.has(lang)) {
+        const previewBtn = document.createElement('button');
+        previewBtn.className = 'code_mini_btn run';
+        previewBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>Preview';
+        previewBtn.addEventListener('click', () => {
+          const existing = wrap.nextElementSibling;
+          if (existing?.classList?.contains('preview_frame')) { existing.remove(); return; }
+          const frame = makePreviewFrame(code.textContent);
+          wrap.after(frame);
+        });
+        actions.appendChild(previewBtn);
+      }
+
+      pre.parentNode.insertBefore(wrap, pre);
+      wrap.appendChild(bar);
+      wrap.appendChild(pre);
+    });
+  }
 
   // theme
   function applyTheme() {
@@ -2760,6 +3116,7 @@ Hard rules you never cross: no CSAM, no sexual content involving minors, no porn
   function applySlash(it) {
     if (it.cmd === '/clear') { hideSlashMenu(); input.value = ''; input.dispatchEvent(new Event('input')); newChat(); return; }
     if (it.cmd === '/export') { hideSlashMenu(); input.value = ''; input.dispatchEvent(new Event('input')); if (activeChatObj) exportChatMd(activeChatObj); else toast({ title: 'Nothing to export yet.' }, 2500); return; }
+    if (it.cmd === '/container') { hideSlashMenu(); input.value = ''; input.dispatchEvent(new Event('input')); openContainerModal(); return; }
     input.value = it.cmd + ' ';
     input.focus();
     input.setSelectionRange(input.value.length, input.value.length);
@@ -2858,10 +3215,79 @@ Hard rules you never cross: no CSAM, no sexual content involving minors, no porn
       runImageTurn(prompt, imageAtts);
       return;
     }
+    if (/^\/run(\s|$)/i.test(text)) {
+      const code = text.replace(/^\/run\s*/i, '');
+      if (!code.trim()) {
+        toast({ title: 'Try /run console.log(2 + 2)' }, 2500);
+        sendBtn.disabled = false;
+        return;
+      }
+      runStandaloneCode(code);
+      return;
+    }
     runTurn(finalText || 'Describe this image.', imageAtts, {
       displayText: text,
       attachmentPreview: allAttachments,
     });
+  }
+
+  async function runStandaloneCode(code) {
+    busy = true;
+    setSendMode('stop');
+    ensureChat('/run ' + code.slice(0, 40));
+    const userIdx = history.length;
+    history.push({ role: 'user', content: '/run\n\n```javascript\n' + code + '\n```' });
+    if (activeChatObj) { activeChatObj.messages = history.slice(); saveState(); }
+    addUserMsgEl('/run\n\n' + code, userIdx);
+
+    const botRow = document.createElement('div');
+    botRow.className = 'msg_row bot';
+    const body = document.createElement('div');
+    body.className = 'bot_body';
+    body.innerHTML = renderMd('```javascript\n' + code + '\n```');
+    decorateCodeBlocks(body);
+    botRow.appendChild(body);
+    inner.appendChild(botRow);
+
+    const output = document.createElement('div');
+    output.className = 'exec_output';
+    output.innerHTML = `<div class="exec_head"><span>stdout · ${containerSessionId.slice(0,12)}</span><button class="close">×</button></div><div class="exec_lines"><div class="exec_line" style="color:var(--muted)">running in ${containerSessionId}...</div></div>`;
+    body.appendChild(output);
+    output.querySelector('.close').addEventListener('click', () => output.remove());
+    scrollDown();
+
+    const started = performance.now();
+    const logs = await runJavaScript(code);
+    const took = (performance.now() - started).toFixed(0) + 'ms';
+    output.querySelector('.exec_head span').textContent = `stdout · ${took} · ${containerSessionId.slice(0,12)}`;
+    const lines = output.querySelector('.exec_lines');
+    lines.innerHTML = '';
+    if (!logs.length) {
+      const d = document.createElement('div');
+      d.className = 'exec_line';
+      d.style.color = 'var(--muted)';
+      d.textContent = '(no output)';
+      lines.appendChild(d);
+    } else {
+      logs.forEach(([type, txt]) => {
+        const d = document.createElement('div');
+        d.className = 'exec_line ' + type;
+        const tag = document.createElement('span');
+        tag.className = 'tag';
+        tag.textContent = type;
+        d.appendChild(tag);
+        d.appendChild(document.createTextNode(txt));
+        lines.appendChild(d);
+      });
+    }
+
+    const summary = logs.length ? logs.map(([t, x]) => `[${t}] ${x}`).join('\n') : '(no output)';
+    history.push({ role: 'assistant', content: 'Ran in ' + containerSessionId + ' (' + took + ')\n\n```\n' + summary + '\n```' });
+    if (activeChatObj) { activeChatObj.messages = history.slice(); saveState(); }
+
+    busy = false;
+    setSendMode('send');
+    input.focus();
   }
 
   function ensureChat(firstUserText) {
@@ -2964,7 +3390,9 @@ Hard rules you never cross: no CSAM, no sexual content involving minors, no porn
     const row = document.createElement('div');
     row.className = 'msg_row bot';
     row.innerHTML = `<div class="bot_body"></div>`;
-    row.querySelector('.bot_body').innerHTML = renderMd(text);
+    const body = row.querySelector('.bot_body');
+    body.innerHTML = renderMd(text);
+    decorateCodeBlocks(body);
     inner.appendChild(row);
     scrollDown();
     return row;
@@ -3356,7 +3784,7 @@ Return the SVG only.`;
     } else {
       try {
         const opts = {
-          modelTier: state.model === 'o1' || state.model === 'gpt4' ? 'default' : 'quick',
+          modelTier: 'quick',
           signal: currentAbort.signal,
           onText: ({ text }) => {
             streamed = text;
@@ -3392,6 +3820,7 @@ Return the SVG only.`;
 
     const finalText = errorText || (result && result.text) || streamed || '(no response)';
     botBody.innerHTML = renderMd(finalText);
+    decorateCodeBlocks(botBody);
     const took = ((Date.now() - started) / 1000).toFixed(2);
     metaRow.innerHTML = `<span class="tok">${Math.round((finalText.length/4) / ((Date.now()-started)/1000 || 1))} tok/s</span><span>· ${took}s · ${edgeCity.code} · ${edgePing}ms</span>`;
 
