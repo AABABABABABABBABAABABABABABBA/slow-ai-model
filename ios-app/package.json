@@ -1,0 +1,30 @@
+{
+  "name": "chadgpt-ios",
+  "private": true,
+  "version": "1.0.0",
+  "description": "ChadGPT native iOS wrapper (Capacitor)",
+  "type": "module",
+  "scripts": {
+    "sync": "cap sync ios",
+    "open": "cap open ios",
+    "add:ios": "cap add ios",
+    "icons": "capacitor-assets generate --ios",
+    "build": "echo '(static: www/ is the shell that loads the live site)'",
+    "testflight": "bash scripts/upload-testflight.sh"
+  },
+  "dependencies": {
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/ios": "^6.2.0",
+    "@capacitor/app": "^6.0.2",
+    "@capacitor/splash-screen": "^6.0.3",
+    "@capacitor/status-bar": "^6.0.2",
+    "@capacitor/haptics": "^6.0.2",
+    "@capacitor/keyboard": "^6.0.3",
+    "@capacitor/browser": "^6.0.4",
+    "@capacitor/share": "^6.0.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.2.0",
+    "@capacitor/assets": "^3.0.5"
+  }
+}

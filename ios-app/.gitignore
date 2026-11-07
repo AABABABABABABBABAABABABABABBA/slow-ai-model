@@ -1,0 +1,17 @@
+# Capacitor
+node_modules/
+ios/App/Pods/
+ios/App/App.xcworkspace/xcuserdata/
+ios/App/App.xcodeproj/xcuserdata/
+ios/App/App.xcodeproj/project.xcworkspace/xcuserdata/
+ios/DerivedData/
+build/
+*.xcarchive
+*.ipa
+*.p8
+
+# macOS cruft
+.DS_Store
+
+# Capacitor regens
+ios/App/public/

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>ChadGPT</title>
+  <style>
+    :root { color-scheme: dark; }
+    html, body {
+      margin: 0; padding: 0;
+      height: 100%;
+      background: #0e0f13;
+      color: #e6e6e6;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+      overscroll-behavior: none;
+    }
+    .center {
+      position: fixed; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 24px;
+      text-align: center;
+    }
+    .logo {
+      width: 72px; height: 72px;
+      border-radius: 18px;
+      background: linear-gradient(135deg, #4e2a8e, #8a4fd1);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 36px; font-weight: 800; color: #fff;
+      margin-bottom: 18px;
+      box-shadow: 0 6px 24px rgba(138,79,209,0.35);
+    }
+    h1 { font-size: 22px; margin: 0 0 6px; font-weight: 700; }
+    p { font-size: 14px; color: #8f8f98; margin: 0; max-width: 300px; line-height: 1.5; }
+    .spin {
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.15);
+      border-top-color: #8a4fd1;
+      margin-top: 18px;
+      animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .err { display: none; color: #f0b429; margin-top: 16px; font-size: 13px; }
+    body.offline .spin { display: none; }
+    body.offline .err { display: block; }
+  </style>
+</head>
+<body>
+  <div class="center">
+    <div class="logo">C</div>
+    <h1>ChadGPT</h1>
+    <p id="msg">Loading…</p>
+    <div class="spin"></div>
+    <div class="err">No connection. The app loads the live site from chadgpt-964.pages.dev — you need internet.</div>
+  </div>
+  <script>
+    // Capacitor's server.url takes over as soon as the native layer attaches.
+    // This shell exists only for the offline fallback + App Store screenshots.
+    window.addEventListener('offline', () => document.body.classList.add('offline'));
+    window.addEventListener('online',  () => document.body.classList.remove('offline'));
+    if (!navigator.onLine) document.body.classList.add('offline');
+  </script>
+</body>
+</html>
