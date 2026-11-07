@@ -323,6 +323,19 @@ main {
 }
 .msg_row.bot:hover .msg_actions, .msg_actions.show { opacity: 1; }
 
+.moe_badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-top: 10px; padding: 4px 10px;
+  border-radius: 999px; border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--ok) 8%, transparent);
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+  max-width: fit-content;
+}
+.moe_badge .moe_dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
+.moe_badge .moe_label { color: var(--fg); font-weight: 600; }
+.moe_badge .moe_sep { opacity: 0.4; }
+.moe_badge .moe_reason { opacity: 0.8; }
+
 .attach_strip { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 10px 6px; }
 .attach_thumb { position: relative; width: 56px; height: 56px; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); background: var(--bg); }
 .attach_thumb img { width: 100%; height: 100%; object-fit: cover; }

@@ -4,6 +4,6 @@
 // unless you want to swap brand/default model.
 window.CHADGPT_CONFIG = Object.freeze({
   apiBase: '/api',
-  defaultModel: 'fast',
+  defaultModel: 'auto',
   brand: 'ChadGPT',
 });

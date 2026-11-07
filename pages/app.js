@@ -260,10 +260,12 @@ function renderChatMeter() {
 setInterval(() => { regenUsage(); renderUsageBadge(); saveState(); }, 15000);
 
 // ---------- models ----------------------
+// 'auto' is the Chad MoE: router picks an expert per message
 const MODELS = [
+  { id: 'auto',     worker: 'chat',  apiModel: 'auto',     name: 'Chad MoE',  sub: 'auto',    desc: 'Router picks the best expert per message' },
   { id: 'fast',     worker: 'chat',  apiModel: 'fast',     name: 'ChadGPT',   sub: 'fast',    desc: 'Llama 3.1 8B fast · free tier' },
-  { id: 'small',    worker: 'chat',  apiModel: 'small',    name: 'ChadGPT',   sub: 'small',   desc: 'Llama 3.2 3B · cheapest neurons' },
-  { id: 'tiny',     worker: 'chat',  apiModel: 'tiny',     name: 'ChadGPT',   sub: 'tiny',    desc: 'Llama 3.2 1B · stretches free tier' },
+  { id: 'small',    worker: 'chat',  apiModel: 'small',    name: 'ChadGPT',   sub: 'small',   desc: 'Llama 3.2 3B · creative writing' },
+  { id: 'tiny',     worker: 'chat',  apiModel: 'tiny',     name: 'ChadGPT',   sub: 'tiny',    desc: 'Llama 3.2 1B · fastest' },
   { id: 'chadcoder',worker: 'code',  apiModel: 'deepseek', name: 'ChadCoder', sub: '6.7B',    desc: 'DeepSeek Coder · code specialist' },
 ];
 function modelObj() { return MODELS.find(m => m.id === state.model) || MODELS[0]; }
@@ -628,6 +630,7 @@ async function runChatTurn(userText, attachments, opts) {
 
   let accumulated = '';
   let errText = null;
+  let routeInfo = null;
   try {
     const res = await apiFetch(apiPath, {
       method: 'POST',
@@ -640,6 +643,15 @@ async function runChatTurn(userText, attachments, opts) {
       }),
       signal: currentAbort.signal,
     });
+    const moeExpert = res.headers.get('x-moe-expert');
+    if (moeExpert) {
+      routeInfo = {
+        expert: moeExpert,
+        label: res.headers.get('x-moe-label') || moeExpert,
+        reason: res.headers.get('x-moe-reason') || '',
+        via: res.headers.get('x-moe-via') || '',
+      };
+    }
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
       errText = j.error || `${res.status} ${res.statusText}`;
@@ -660,6 +672,19 @@ async function runChatTurn(userText, attachments, opts) {
   const finalText = errText ? ('Error: ' + errText) : (accumulated || '(no response)');
   body.innerHTML = renderMd(finalText);
   decorateCodeBlocks(body);
+  if (routeInfo) {
+    const badge = document.createElement('div');
+    badge.className = 'moe_badge';
+    badge.innerHTML = `
+      <span class="moe_dot"></span>
+      <span class="moe_label"></span>
+      <span class="moe_sep">·</span>
+      <span class="moe_reason"></span>
+    `;
+    badge.querySelector('.moe_label').textContent = 'routed to ' + routeInfo.label;
+    badge.querySelector('.moe_reason').textContent = routeInfo.reason + (routeInfo.via ? ' · via ' + routeInfo.via : '');
+    body.appendChild(badge);
+  }
   addMessageActions(body, finalText);
 
   history.push({ role: 'assistant', content: finalText });
@@ -950,23 +975,31 @@ function openPopover(anchor, items, align) {
 }
 
 modelBtn.addEventListener('click', () => {
-  openPopover(modelBtn, [
-    { label: 'Models' },
-    ...MODELS.map(m => {
-      const needsPlus = m.id !== 'fast';
-      const locked = needsPlus && state.plan !== 'plus';
-      return {
-        title: m.name + (m.sub ? ' ' + m.sub : '') + (needsPlus ? ' · Plus' : ''),
-        sub: locked ? 'Requires Plus · click to upgrade' : m.desc,
-        selected: state.model === m.id,
-        onClick: () => {
-          if (locked) { openPaywallModal(`${m.name} ${m.sub} requires Plus`); return; }
-          state.model = m.id; saveState(); updateModelPicker();
-          toast({ title: 'Switched to ' + m.name + ' ' + m.sub }, 2200, 'ok');
-        },
-      };
-    }),
-  ]);
+  const items = [{ label: 'MoE' }];
+  const auto = MODELS[0];
+  items.push({
+    title: auto.name + ' · ' + auto.sub,
+    sub: auto.desc + (state.plan === 'plus' ? ' (incl. coder)' : ' (free pool)'),
+    selected: state.model === 'auto',
+    onClick: () => { state.model = 'auto'; saveState(); updateModelPicker(); toast({ title: 'Chad MoE engaged — router picks per message' }, 2500, 'ok'); },
+  });
+  items.push('-');
+  items.push({ label: 'Manual pick' });
+  for (const m of MODELS.slice(1)) {
+    const needsPlus = m.id !== 'fast';
+    const locked = needsPlus && state.plan !== 'plus';
+    items.push({
+      title: m.name + (m.sub ? ' ' + m.sub : '') + (needsPlus ? ' · Plus' : ''),
+      sub: locked ? 'Requires Plus · click to upgrade' : m.desc,
+      selected: state.model === m.id,
+      onClick: () => {
+        if (locked) { openPaywallModal(`${m.name} ${m.sub} requires Plus`); return; }
+        state.model = m.id; saveState(); updateModelPicker();
+        toast({ title: 'Switched to ' + m.name + ' ' + m.sub }, 2200, 'ok');
+      },
+    });
+  }
+  openPopover(modelBtn, items);
 });
 function updateModelPicker() {
   const m = modelObj();

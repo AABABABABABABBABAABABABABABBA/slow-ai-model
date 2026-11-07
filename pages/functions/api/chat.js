@@ -1,5 +1,6 @@
 import { getAuthedUser, mintWorkerToken, userCanUseChatModel, json, unauthorized, forbidden } from '../_lib/auth.js';
 import { detectBasketball, fetchNbaContext } from '../_lib/espn.js';
+import { route as moeRoute } from '../_lib/router.js';
 
 export async function onRequestPost({ request, env }) {
   const user = await getAuthedUser(request, env);
@@ -8,9 +9,22 @@ export async function onRequestPost({ request, env }) {
   let body;
   try { body = await request.json(); } catch { return json({ error: 'invalid JSON' }, { status: 400 }); }
 
-  const model = body.model || 'fast';
-  if (!userCanUseChatModel(user, model)) {
-    return forbidden(`model "${model}" requires Plus`);
+  const requestedModel = body.model || 'fast';
+
+  // ---- MoE auto routing ----
+  // If the client asks for "auto", classify the last user message and pick an
+  // expert from the pool. The picked expert may be on the chat worker OR the
+  // code worker — we proxy to whichever is right.
+  let routedTo = null;
+  if (requestedModel === 'auto') {
+    const lastUser = body.messages?.filter(m => m.role === 'user').pop();
+    const text = typeof lastUser?.content === 'string' ? lastUser.content : '';
+    routedTo = await moeRoute(text, { allowPlus: user.plan === 'plus' }, env);
+    body.model = routedTo.model;
+  } else {
+    if (!userCanUseChatModel(user, requestedModel)) {
+      return forbidden(`model "${requestedModel}" requires Plus`);
+    }
   }
 
   if (!env.CHAT_URL) return json({ error: 'CHAT_URL not configured' }, { status: 500 });
@@ -41,13 +55,12 @@ export async function onRequestPost({ request, env }) {
     }
   }
 
-  // Mint a worker-trusted token on behalf of the user. Workers have no idea
-  // this user exists — they just verify the signed token.
-  const workerToken = await mintWorkerToken(env, request, user.id);
+  // Pick which worker to call. MoE may route to the code worker.
+  const targetUrl = routedTo?.worker === 'code' ? env.CODE_URL : env.CHAT_URL;
+  if (!targetUrl) return json({ error: `${routedTo?.worker || 'chat'}_URL not configured` }, { status: 500 });
 
-  // Proxy the request to the chat worker, forwarding client IP + UA so the
-  // worker's binding check matches what we signed.
-  const upstream = await fetch(env.CHAT_URL + '/chat', {
+  const workerToken = await mintWorkerToken(env, request, user.id);
+  const upstream = await fetch(targetUrl + '/chat', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -59,10 +72,18 @@ export async function onRequestPost({ request, env }) {
     body: JSON.stringify(body),
   });
 
-  // Stream the SSE response back to the browser untouched.
   const headers = new Headers(upstream.headers);
   headers.delete('X-Session-Id');
   headers.set('Access-Control-Allow-Origin', env.PAGES_ORIGIN || new URL(request.url).origin);
   headers.set('X-Enriched', espnTag);
+  if (routedTo) {
+    headers.set('X-Moe-Expert', routedTo.expert);
+    headers.set('X-Moe-Label', routedTo.label);
+    headers.set('X-Moe-Reason', routedTo.reason);
+    headers.set('X-Moe-Via', routedTo.via);
+    headers.set('Access-Control-Expose-Headers', 'X-Moe-Expert,X-Moe-Label,X-Moe-Reason,X-Moe-Via,X-Enriched');
+  } else {
+    headers.set('Access-Control-Expose-Headers', 'X-Enriched');
+  }
   return new Response(upstream.body, { status: upstream.status, headers });
 }
