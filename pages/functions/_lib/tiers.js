@@ -31,6 +31,36 @@ export const LIMITS = {
   ultra: { daily: 15,  weekly: 75 },
 };
 
+// Approximate cost per model in micro-USD per 1k tokens output.
+// Figures come from Cloudflare Workers AI's public per-1M-tokens pricing
+// (https://developers.cloudflare.com/workers-ai/platform/pricing/), rounded
+// down. Free-tier Workers AI quota still applies — these numbers are what
+// the founder sees deducted from their paid account.
+export const MODEL_COST_PER_1K = {
+  'fast':          80,      // llama-3.1-8b-instruct-fast
+  'small':         50,      // llama-3.2-3b
+  'tiny':          20,      // llama-3.2-1b
+  'mistral':       110,
+  'gemma':         100,
+  'openchat':      110,
+  'phi':           40,
+  'llama-3':       200,
+  'hermes':        180,
+  'qwen-14b':      280,
+  'gemma-12b':     260,
+  'mistral-24b':   360,
+  'chadcoder':     140,     // deepseek coder 6.7b
+  'llama-70b':     450,
+  'deepseek-r1':   500,
+  'qwen-coder':    520,
+};
+
+// Cost for one call in micro-USD given generated token count.
+export function costMicro(modelKey, tokens) {
+  const per1k = MODEL_COST_PER_1K[modelKey] ?? 100;
+  return Math.ceil((per1k * Math.max(1, tokens)) / 1000);
+}
+
 export function tierForModel(key) {
   return MODEL_CATALOG[key]?.tier || 'free';
 }
@@ -68,5 +98,11 @@ export function nextWeeklyResetMs(now = Date.now()) {
 // Does this user's plan allow this tier at all? (ignores quota)
 export function planAllowsTier(plan, tier) {
   if (tier === 'free') return true;
+  if (plan === 'unlimited') return true;
   return plan === 'plus';
+}
+
+// Bypass quota checks entirely? Founder grants = yes.
+export function planSkipsQuota(plan) {
+  return plan === 'unlimited';
 }

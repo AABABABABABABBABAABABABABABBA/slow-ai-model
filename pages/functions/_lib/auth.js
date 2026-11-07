@@ -135,7 +135,27 @@ export async function getAuthedUser(request, env) {
   const token = cookies[COOKIE_NAME];
   const claims = await verifyUserJwt(env, token);
   if (!claims) return null;
-  return { id: claims.sub, email: claims.email, plan: claims.plan, exp: claims.exp };
+  // The JWT carries the plan at issue time, but a founder grant / revoke
+  // happens in DB. Prefer the live row so unlimited takes effect immediately.
+  let plan = claims.plan;
+  let granted_by = null;
+  if (env.DB) {
+    try {
+      const row = await env.DB.prepare(
+        'SELECT plan, granted_by FROM users WHERE id = ?'
+      ).bind(claims.sub).first();
+      if (row) { plan = row.plan; granted_by = row.granted_by; }
+    } catch (_) {}
+  }
+  return { id: claims.sub, email: claims.email, plan, granted_by, exp: claims.exp };
+}
+
+// Founder gate: only the registered founder email can call admin endpoints.
+// Stored as FOUNDER_EMAIL in Pages env; falls back to the hardcoded one.
+export function isFounder(env, user) {
+  if (!user?.email) return false;
+  const founder = (env.FOUNDER_EMAIL || 'corbyiscool@gmail.com').toLowerCase();
+  return user.email.toLowerCase() === founder;
 }
 
 // ---------- JSON response helpers ----------

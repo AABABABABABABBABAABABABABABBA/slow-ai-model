@@ -5,11 +5,13 @@ CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,          -- format: "pbkdf2$<iter>$<salt_b64>$<hash_b64>"
-  plan TEXT NOT NULL DEFAULT 'free',    -- 'free' | 'plus'
+  plan TEXT NOT NULL DEFAULT 'free',    -- 'free' | 'plus' | 'unlimited'
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   usage_score REAL NOT NULL DEFAULT 100,
-  usage_last_at INTEGER NOT NULL DEFAULT 0
+  usage_last_at INTEGER NOT NULL DEFAULT 0,
+  granted_by TEXT,                      -- email of founder who granted unlimited; NULL otherwise
+  granted_at INTEGER                    -- epoch ms when unlimited was granted
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
@@ -54,8 +56,26 @@ CREATE TABLE IF NOT EXISTS usage_log (
   day_key TEXT NOT NULL,                -- 'YYYY-MM-DD' UTC
   week_key TEXT NOT NULL,               -- 'YYYY-Www'  ISO week UTC
   tokens INTEGER NOT NULL DEFAULT 0,
+  cost_micro INTEGER NOT NULL DEFAULT 0,-- cost in micro-USD (1 = $0.000001); avoids float drift
   created_at INTEGER NOT NULL,
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 CREATE INDEX IF NOT EXISTS idx_usage_daily  ON usage_log(user_id, tier, day_key);
 CREATE INDEX IF NOT EXISTS idx_usage_weekly ON usage_log(user_id, tier, week_key);
+CREATE INDEX IF NOT EXISTS idx_usage_user   ON usage_log(user_id);
+
+-- Hardware / device fingerprints — one row per (user, fingerprint) pair.
+-- Lets us spot the same device signing up under many emails to dodge limits.
+CREATE TABLE IF NOT EXISTS device_fingerprints (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  fp_hash TEXT NOT NULL,                -- SHA-256 of client+server signals
+  ip_hash TEXT,                         -- SHA-256 of last-seen IP (salted)
+  ua_hash TEXT,                         -- SHA-256 of last-seen User-Agent
+  first_seen_at INTEGER NOT NULL,
+  last_seen_at INTEGER NOT NULL,
+  blocked INTEGER NOT NULL DEFAULT 0,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_fp_user ON device_fingerprints(user_id);
+CREATE INDEX IF NOT EXISTS idx_fp_hash ON device_fingerprints(fp_hash);

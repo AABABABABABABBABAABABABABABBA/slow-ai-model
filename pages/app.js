@@ -253,13 +253,24 @@ function renderUsageBadge() {
   const fill = document.getElementById('usage_fill');
   const num = document.getElementById('usage_num');
   const plusTag = document.getElementById('plus_tag');
+  if (state.plan === 'unlimited') {
+    fill.style.width = '100%';
+    num.textContent = '∞';
+    badge.classList.remove('low', 'crit');
+    badge.classList.add('plus', 'unlimited');
+    plusTag.hidden = false;
+    plusTag.textContent = '∞';
+    return;
+  }
   const s = Math.round(state.usage.score);
   fill.style.width = s + '%';
   num.textContent = String(s);
   badge.classList.toggle('low', s < 30 && s >= 10);
   badge.classList.toggle('crit', s < 10);
   badge.classList.toggle('plus', state.plan === 'plus');
+  badge.classList.remove('unlimited');
   plusTag.hidden = state.plan !== 'plus';
+  plusTag.textContent = 'PLUS';
 }
 function renderChatMeter() {
   const meter = document.getElementById('chat_meter');
@@ -704,6 +715,7 @@ async function runChatTurn(userText, attachments, opts) {
         stream: true,
         chad_mode: state.settings.chadMode,
         temperature: state.settings.temperature,
+        fingerprint: collectClientFingerprint(),
       }),
       signal: currentAbort.signal,
     });
@@ -1129,6 +1141,39 @@ async function openUsageModal() {
       p.innerHTML = '<div style="color:var(--danger);padding:20px">Failed to load usage data.</div>';
       return;
     }
+
+    // Unlimited plan: show cost-to-founder instead of per-tier bars.
+    if (u.plan === 'unlimited') {
+      const cost = u.lifetime_cost_usd || 0;
+      const calls = u.lifetime_calls || 0;
+      p.innerHTML = `
+        <div style="padding:16px;border-radius:10px;background:linear-gradient(135deg,#4e2a8e,#8a4fd1);color:#fff;margin-bottom:14px">
+          <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.9">Founder grant</div>
+          <div style="font-size:22px;font-weight:700;margin-top:4px">Unlimited access</div>
+          <div style="font-size:12px;opacity:.9;margin-top:6px">Granted by ${u.granted_by || 'founder'}. Every tier unlocked, no daily or weekly cap.</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+          <div style="padding:12px;border:1px solid var(--border);border-radius:8px">
+            <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Cost to founder</div>
+            <div style="font-size:20px;font-weight:700;margin-top:4px;font-family:var(--mono)">$${cost.toFixed(4)}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:2px">your lifetime burden</div>
+          </div>
+          <div style="padding:12px;border:1px solid var(--border);border-radius:8px">
+            <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Calls</div>
+            <div style="font-size:20px;font-weight:700;margin-top:4px;font-family:var(--mono)">${calls.toLocaleString()}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:2px">lifetime requests</div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.5">
+          Every model is open to you. The cost above is only your share — it doesn't include anyone else's usage. The founder sees this figure (and the full per-user breakdown) in the admin panel.
+        </div>
+        ${u.is_founder ? '<div style="margin-top:14px;text-align:right"><button class="btn_primary" style="background:#4e2a8e" id="u_admin_u">Founder admin</button></div>' : ''}
+      `;
+      const au = p.querySelector('#u_admin_u');
+      if (au) au.addEventListener('click', () => { closeModal(); openFounderAdmin(); });
+      return;
+    }
+
     const tierLabel = { free: 'Free · unlimited', pro: 'Pro · Plus', ultra: 'Ultra · Plus' };
     const rows = ['free', 'pro', 'ultra'].map(k => {
       const t = u.tiers[k];
@@ -1167,9 +1212,12 @@ async function openUsageModal() {
         Daily resets ${new Date(u.resets_daily_at).toLocaleString()}. Weekly resets ${new Date(u.resets_weekly_at).toLocaleString()}. All counters live in Cloudflare D1 — they survive logout and device changes.
       </div>
       ${u.plan === 'free' ? '<div style="margin-top:14px;text-align:right"><button class="btn_primary" id="u_upgrade">Upgrade to Plus</button></div>' : ''}
+      ${u.is_founder ? '<div style="margin-top:10px;text-align:right"><button class="btn_primary" style="background:#4e2a8e" id="u_admin">Founder admin</button></div>' : ''}
     `;
     const up = p.querySelector('#u_upgrade');
     if (up) up.addEventListener('click', () => { closeModal(); openPaywallModal(); });
+    const ad = p.querySelector('#u_admin');
+    if (ad) ad.addEventListener('click', () => { closeModal(); openFounderAdmin(); });
   });
 }
 
@@ -1187,6 +1235,124 @@ function openUsageLimitModal(info) {
     p.querySelector('#ulm_close').addEventListener('click', closeModal);
     p.querySelector('#ulm_pick').addEventListener('click', () => { state.model = 'fast'; saveState(); updateModelPicker(); closeModal(); });
   });
+}
+
+// ---------- founder admin panel ----------
+async function openFounderAdmin() {
+  openModal('Founder admin', async (p) => {
+    p.innerHTML = '<div style="text-align:center;color:var(--muted);padding:20px">Loading users…</div>';
+    const r = await apiFetch('/admin/users', { method: 'GET' });
+    if (!r.ok) {
+      p.innerHTML = `<div style="color:var(--danger);padding:20px">Failed to load (${r.status}). Are you logged in as the founder?</div>`;
+      return;
+    }
+    const j = await r.json();
+    const t = j.totals;
+    const rows = j.users.map(u => {
+      const planColor = u.plan === 'unlimited' ? '#9b6bd8' : u.plan === 'plus' ? '#2e7d32' : 'var(--muted)';
+      return `
+        <tr style="border-bottom:1px solid var(--divider)">
+          <td style="padding:8px 6px;font-size:13px">${u.email}</td>
+          <td style="padding:8px 6px;font-size:12px"><span style="color:${planColor};font-weight:600">${u.plan.toUpperCase()}</span></td>
+          <td style="padding:8px 6px;text-align:right;font-family:var(--mono);font-size:12px">$${u.cost_usd.toFixed(4)}</td>
+          <td style="padding:8px 6px;text-align:right;font-family:var(--mono);font-size:12px">${u.calls}</td>
+          <td style="padding:8px 6px;text-align:right">
+            ${u.plan === 'unlimited'
+              ? `<button class="btn_primary" style="padding:4px 10px;font-size:12px;background:#b23c3c" data-revoke="${u.email}">Revoke</button>`
+              : `<button class="btn_primary" style="padding:4px 10px;font-size:12px" data-grant="${u.email}">Grant</button>`}
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    p.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
+        <div style="padding:10px;border:1px solid var(--border);border-radius:8px">
+          <div style="font-size:11px;color:var(--muted);text-transform:uppercase">Users</div>
+          <div style="font-size:18px;font-weight:700;font-family:var(--mono)">${t.user_count}</div>
+        </div>
+        <div style="padding:10px;border:1px solid var(--border);border-radius:8px">
+          <div style="font-size:11px;color:var(--muted);text-transform:uppercase">Unlimited grants</div>
+          <div style="font-size:18px;font-weight:700;font-family:var(--mono)">${t.granted_count}</div>
+        </div>
+        <div style="padding:10px;border:1px solid var(--border);border-radius:8px">
+          <div style="font-size:11px;color:var(--muted);text-transform:uppercase">Your burden</div>
+          <div style="font-size:18px;font-weight:700;font-family:var(--mono)">$${t.founder_burden_usd.toFixed(4)}</div>
+        </div>
+      </div>
+      <div style="max-height:360px;overflow:auto;border:1px solid var(--border);border-radius:8px">
+        <table style="width:100%;border-collapse:collapse">
+          <thead style="background:var(--divider);position:sticky;top:0">
+            <tr>
+              <th style="padding:8px 6px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--muted)">Email</th>
+              <th style="padding:8px 6px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--muted)">Plan</th>
+              <th style="padding:8px 6px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--muted)">Cost</th>
+              <th style="padding:8px 6px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--muted)">Calls</th>
+              <th style="padding:8px 6px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--muted)"></th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <div style="margin-top:10px;font-size:11px;color:var(--muted)">
+        Total cost across all users: <b style="font-family:var(--mono)">$${t.total_cost_usd.toFixed(4)}</b>. Costs computed from Workers AI per-token pricing × estimated tokens per call.
+      </div>
+    `;
+
+    p.querySelectorAll('[data-grant]').forEach(btn => btn.addEventListener('click', async () => {
+      const email = btn.getAttribute('data-grant');
+      if (!confirm(`Grant unlimited to ${email}?`)) return;
+      const rr = await apiFetch('/admin/grant', { method: 'POST', body: JSON.stringify({ email, plan: 'unlimited' }) });
+      if (rr.ok) { toast({ title: 'Granted — unlimited for ' + email }, 3000, 'ok'); openFounderAdmin(); }
+      else toast({ title: 'Grant failed' }, 3000, 'err');
+    }));
+    p.querySelectorAll('[data-revoke]').forEach(btn => btn.addEventListener('click', async () => {
+      const email = btn.getAttribute('data-revoke');
+      if (!confirm(`Revoke unlimited from ${email}? They'll drop to free.`)) return;
+      const rr = await apiFetch('/admin/grant', { method: 'POST', body: JSON.stringify({ email, plan: 'free' }) });
+      if (rr.ok) { toast({ title: 'Revoked — ' + email + ' is now free' }, 3000, 'ok'); openFounderAdmin(); }
+      else toast({ title: 'Revoke failed' }, 3000, 'err');
+    }));
+  });
+}
+
+// ---------- device fingerprint (client half) ----------
+// We send these client-side signals with every chat. The server combines them
+// with IP + UA + salt, hashes everything together, and stores the result.
+let _fp = null;
+function collectClientFingerprint() {
+  if (_fp) return _fp;
+  try {
+    const nav = window.navigator;
+    const scr = window.screen;
+    // Canvas hash — browsers render text slightly differently depending on
+    // GPU + font stack, so this is a decent device discriminator.
+    let canvasHash = '';
+    try {
+      const c = document.createElement('canvas');
+      c.width = 200; c.height = 50;
+      const ctx = c.getContext('2d');
+      ctx.textBaseline = 'top'; ctx.font = '14px Arial';
+      ctx.fillStyle = '#f60'; ctx.fillRect(0, 0, 200, 50);
+      ctx.fillStyle = '#069'; ctx.fillText('ChadGPT fp canvas', 2, 2);
+      canvasHash = c.toDataURL().slice(-64);
+    } catch { canvasHash = 'n/a'; }
+    _fp = {
+      tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      lang: nav.language,
+      langs: (nav.languages || []).join(','),
+      platform: nav.platform,
+      hw: nav.hardwareConcurrency,
+      mem: nav.deviceMemory || 0,
+      cookieEnabled: nav.cookieEnabled,
+      dnt: nav.doNotTrack || '',
+      screen: `${scr.width}x${scr.height}x${scr.colorDepth}`,
+      dpr: window.devicePixelRatio,
+      touch: ('ontouchstart' in window) || (nav.maxTouchPoints > 0),
+      canvas: canvasHash,
+    };
+  } catch { _fp = {}; }
+  return _fp;
 }
 
 function openPaywallModal(headline) {

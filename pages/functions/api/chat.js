@@ -1,8 +1,9 @@
 import { getAuthedUser, mintWorkerToken, json, unauthorized, forbidden } from '../_lib/auth.js';
 import { enrich } from '../_lib/enrichers.js';
 import { route as moeRoute } from '../_lib/router.js';
-import { MODEL_CATALOG, tierForModel, planAllowsTier } from '../_lib/tiers.js';
+import { MODEL_CATALOG, tierForModel, planAllowsTier, planSkipsQuota } from '../_lib/tiers.js';
 import { canUse, recordUsage } from '../_lib/usage.js';
+import { recordFingerprint } from '../_lib/fingerprint.js';
 
 // Server-side jailbreak gate — client can't disable this by editing JS.
 const JAILBREAK_PATTERNS = [
@@ -65,7 +66,9 @@ export async function onRequestPost({ request, env }) {
   if (!planAllowsTier(user.plan, tier)) {
     return forbidden(`${finalModelKey} is a ${tier}-tier model — Plus required`);
   }
-  if (tier !== 'free') {
+  // Unlimited plan skips quota checks but still has cost tracked.
+  const skipQuota = planSkipsQuota(user.plan);
+  if (tier !== 'free' && !skipQuota) {
     const gate = await canUse(env, user.id, tier);
     if (!gate.ok) {
       return json({
@@ -78,6 +81,13 @@ export async function onRequestPost({ request, env }) {
         detail: `${tier} ${gate.scope} limit reached (${gate.used}/${gate.limit}). Resets ${gate.resets_at}.`,
       }, { status: 429, headers: { 'Retry-After': String(Math.max(60, Math.floor((Date.parse(gate.resets_at) - Date.now()) / 1000))) } });
     }
+  }
+
+  // Record device fingerprint. If this device is blocked for bypass attempts,
+  // deny the request regardless of plan.
+  const fpCheck = await recordFingerprint(env, user.id, request, body.fingerprint);
+  if (fpCheck.blocked) {
+    return forbidden('device blocked for bypass attempts');
   }
 
   if (!env.CHAT_URL) return json({ error: 'CHAT_URL not configured' }, { status: 500 });
@@ -104,8 +114,14 @@ export async function onRequestPost({ request, env }) {
 
   // Record BEFORE the upstream call. If upstream fails, we still count the
   // attempt — simpler and matches how Claude counts failed sends toward quota.
-  if (tier !== 'free') {
-    await recordUsage(env, user.id, finalModelKey, tier, 0);
+  // Unlimited users record for cost tracking only (not quota).
+  // Token estimate: we don't have streaming output here, so estimate from
+  // input length + a conservative output assumption. Real-token accounting
+  // would need to parse the stream, which breaks our pass-through.
+  const estInputTokens = estimateTokensFromMessages(body.messages || []);
+  const estOutputTokens = 400; // flat estimate per call
+  if (tier !== 'free' || skipQuota) {
+    await recordUsage(env, user.id, finalModelKey, tier, estInputTokens + estOutputTokens);
   }
 
   const workerToken = await mintWorkerToken(env, request, user.id);
@@ -138,4 +154,13 @@ export async function onRequestPost({ request, env }) {
     headers.set('Access-Control-Expose-Headers', 'X-Enriched');
   }
   return new Response(upstream.body, { status: upstream.status, headers });
+}
+
+// ~4 chars per token for llama-family tokenizers; close enough for cost math.
+function estimateTokensFromMessages(messages) {
+  let chars = 0;
+  for (const m of messages) {
+    if (typeof m?.content === 'string') chars += m.content.length;
+  }
+  return Math.ceil(chars / 4);
 }

@@ -1,7 +1,7 @@
 // Read + record usage for a user against the LIMITS table.
 // All date keys computed in UTC.
 
-import { LIMITS, dayKey, weekKey, nextDailyResetMs, nextWeeklyResetMs } from './tiers.js';
+import { LIMITS, dayKey, weekKey, nextDailyResetMs, nextWeeklyResetMs, costMicro } from './tiers.js';
 
 export async function readUsage(env, userId) {
   if (!env.DB) throw new Error('DB not bound');
@@ -14,6 +14,10 @@ export async function readUsage(env, userId) {
   const weekly = await env.DB.prepare(
     'SELECT tier, COUNT(*) AS n FROM usage_log WHERE user_id = ? AND week_key = ? GROUP BY tier'
   ).bind(userId, wk).all();
+  // Lifetime cost this user has incurred (micro-USD).
+  const costRow = await env.DB.prepare(
+    'SELECT COALESCE(SUM(cost_micro), 0) AS total, COUNT(*) AS calls FROM usage_log WHERE user_id = ?'
+  ).bind(userId).first();
   const dailyMap = {}, weeklyMap = {};
   for (const r of (daily.results || [])) dailyMap[r.tier] = r.n;
   for (const r of (weekly.results || [])) weeklyMap[r.tier] = r.n;
@@ -33,6 +37,9 @@ export async function readUsage(env, userId) {
     resets_daily_at:  new Date(nextDailyResetMs()).toISOString(),
     resets_weekly_at: new Date(nextWeeklyResetMs()).toISOString(),
     tiers: out,
+    lifetime_cost_micro: Number(costRow?.total || 0),
+    lifetime_cost_usd: Number(costRow?.total || 0) / 1_000_000,
+    lifetime_calls: Number(costRow?.calls || 0),
   };
 }
 
@@ -54,8 +61,9 @@ export async function canUse(env, userId, tier) {
 export async function recordUsage(env, userId, modelKey, tier, tokens = 0) {
   if (!env.DB) return;
   try {
+    const cost = costMicro(modelKey, tokens);
     await env.DB.prepare(
-      'INSERT INTO usage_log (user_id, model_key, tier, day_key, week_key, tokens, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).bind(userId, modelKey, tier, dayKey(), weekKey(), tokens, Date.now()).run();
+      'INSERT INTO usage_log (user_id, model_key, tier, day_key, week_key, tokens, cost_micro, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    ).bind(userId, modelKey, tier, dayKey(), weekKey(), tokens, cost, Date.now()).run();
   } catch (_) { /* swallow — logging is best-effort */ }
 }
