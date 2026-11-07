@@ -1,5 +1,5 @@
 import { getAuthedUser, mintWorkerToken, userCanUseChatModel, json, unauthorized, forbidden } from '../_lib/auth.js';
-import { detectBasketball, fetchNbaContext } from '../_lib/espn.js';
+import { enrich } from '../_lib/enrichers.js';
 import { route as moeRoute } from '../_lib/router.js';
 
 export async function onRequestPost({ request, env }) {
@@ -30,27 +30,17 @@ export async function onRequestPost({ request, env }) {
   if (!env.CHAT_URL) return json({ error: 'CHAT_URL not configured' }, { status: 500 });
 
   // ---- live data enrichment ----
-  // If the last user message mentions basketball / an NBA team, fetch live data
-  // from ESPN and splice it in so the model answers with real facts instead of
-  // stale training data.
-  let espnTag = 'skip';
+  // Run all detectors against the last user message in parallel. Hits get
+  // prepended as facts the model must prefer over its training data.
+  let enrichmentTag = 'skip';
   if (Array.isArray(body.messages) && body.messages.length) {
     const last = body.messages[body.messages.length - 1];
     if (last && last.role === 'user' && typeof last.content === 'string') {
-      const hint = detectBasketball(last.content);
-      if (hint) {
-        try {
-          const ctx = await fetchNbaContext(hint);
-          if (ctx) {
-            espnTag = `nba:${ctx.length}b`;
-            const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
-            last.content = `[Live ESPN NBA data as of ${stamp}. Use ONLY these numbers for any factual claim about scores, standings, records, or schedules. These override your training data. Do not invent stats.]\n\n${ctx}\n\n---\n\nUser question:\n${last.content}`;
-          } else {
-            espnTag = 'nba:empty';
-          }
-        } catch (_) {
-          espnTag = 'nba:err';
-        }
+      const result = await enrich(last.content);
+      enrichmentTag = result.tag;
+      if (result.context) {
+        const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+        last.content = `[Live data fetched ${stamp}. Prefer these numbers over your training. Do not invent stats, prices, or outcomes.]\n\n${result.context}\n\n---\n\nUser question:\n${last.content}`;
       }
     }
   }
@@ -75,7 +65,7 @@ export async function onRequestPost({ request, env }) {
   const headers = new Headers(upstream.headers);
   headers.delete('X-Session-Id');
   headers.set('Access-Control-Allow-Origin', env.PAGES_ORIGIN || new URL(request.url).origin);
-  headers.set('X-Enriched', espnTag);
+  headers.set('X-Enriched', enrichmentTag);
   if (routedTo) {
     headers.set('X-Moe-Expert', routedTo.expert);
     headers.set('X-Moe-Label', routedTo.label);
