@@ -83,3 +83,21 @@ CREATE TABLE IF NOT EXISTS device_fingerprints (
 );
 CREATE INDEX IF NOT EXISTS idx_fp_user ON device_fingerprints(user_id);
 CREATE INDEX IF NOT EXISTS idx_fp_hash ON device_fingerprints(fp_hash);
+
+-- Thumbs-up / thumbs-down on assistant messages. One row per
+-- (user, message_hash); re-rating overwrites. Used for the founder panel
+-- to spot which models produce the most downvotes.
+CREATE TABLE IF NOT EXISTS message_ratings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  chat_id TEXT,
+  message_hash TEXT NOT NULL,          -- sha256 of (user_id|message_text) slice
+  model_key TEXT,
+  rating INTEGER NOT NULL,             -- 1 = up, -1 = down, 0 = cleared
+  note TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_ratings_user  ON message_ratings(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ratings_model ON message_ratings(model_key, rating);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_rating_msg ON message_ratings(user_id, message_hash);

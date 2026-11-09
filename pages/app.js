@@ -509,6 +509,26 @@ function addUserMsgEl(text, index, images) {
     bubble.className = 'bubble';
     bubble.textContent = text;
     col.appendChild(bubble);
+    // Edit button on user messages — restores the text to the input box and
+    // deletes this turn (+ its reply, if the model has already answered) so
+    // the next send re-asks the edited question.
+    const edit = document.createElement('button');
+    edit.className = 'action_btn edit_user';
+    edit.setAttribute('aria-label', 'edit message');
+    edit.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+    edit.addEventListener('click', () => {
+      if (busy) return;
+      input.value = text;
+      input.focus();
+      input.setSelectionRange(text.length, text.length);
+      // Trim this turn and anything after it.
+      if (Number.isInteger(index)) {
+        history.splice(index);
+        if (activeChatObj) { activeChatObj.messages = history.slice(); saveState(); }
+        renderConversation();
+      }
+    });
+    col.appendChild(edit);
   }
   row.appendChild(col);
   inner.appendChild(row);
@@ -806,7 +826,9 @@ async function runChatTurn(userText, attachments, opts) {
       body.appendChild(wrap);
     } catch (e) { /* overlay is a nice-to-have */ }
   }
-  addMessageActions(body, finalText);
+  // Pass the actual model used (MoE may have routed to a different one) so
+  // the rating API can attribute thumbs to the right model.
+  addMessageActions(body, finalText, { model: routeInfo?.model || state.model });
 
   history.push({ role: 'assistant', content: finalText });
   if (activeChatObj) {
@@ -859,15 +881,27 @@ function renderMoeBadge(info) {
   return wrap;
 }
 
-function addMessageActions(container, text) {
+async function messageHash(text) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 32);
+}
+
+function addMessageActions(container, text, opts = {}) {
+  const modelKey = opts.model || state.model || null;
+  const chatId = activeChatObj?.id || null;
   const actions = document.createElement('div');
   actions.className = 'msg_actions show';
   actions.innerHTML = `
     <button class="action_btn" data-act="copy" aria-label="copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
     <button class="action_btn" data-act="regen" aria-label="regenerate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button>
+    <button class="action_btn" data-act="continue" aria-label="continue response" title="Keep writing"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg></button>
     <button class="action_btn" data-act="speak" aria-label="read aloud"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></button>
+    <span class="action_sep"></span>
+    <button class="action_btn" data-act="up"   aria-label="good answer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H7V10l4.9-6.26A2 2 0 0 1 15 5.88z"/></svg></button>
+    <button class="action_btn" data-act="down" aria-label="bad answer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H17v12l-4.9 6.26a2 2 0 0 1-3.1-.14z"/></svg></button>
   `;
   container.appendChild(actions);
+
   actions.querySelector('[data-act="copy"]').addEventListener('click', async () => {
     try { await navigator.clipboard.writeText(text); toast({ title: 'Copied' }, 1500, 'ok'); } catch {}
   });
@@ -883,9 +917,37 @@ function addMessageActions(container, text) {
       runChatTurn(lastUser.content, []);
     }
   });
+  // Continue: ask the model to pick up where it stopped. We push a user turn
+  // with a continuation nudge; the response appends as a fresh assistant msg.
+  actions.querySelector('[data-act="continue"]').addEventListener('click', () => {
+    if (busy) return;
+    runChatTurn('Continue from exactly where you stopped. Do not repeat anything — just keep going.', []);
+  });
   actions.querySelector('[data-act="speak"]').addEventListener('click', () => {
     try { window.speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); u.rate = 1.1; window.speechSynthesis.speak(u); } catch {}
   });
+
+  // Thumbs up / down. State persists via /api/rate — on reload we don't have
+  // the row's button yet, but a future call to rateMessage can rehydrate.
+  const upBtn = actions.querySelector('[data-act="up"]');
+  const downBtn = actions.querySelector('[data-act="down"]');
+  const setState = (val) => {
+    upBtn.classList.toggle('on', val === 1);
+    downBtn.classList.toggle('on', val === -1);
+  };
+  const rate = async (val) => {
+    // Toggle off if same button clicked twice.
+    const currentlyOn = (val === 1 && upBtn.classList.contains('on')) || (val === -1 && downBtn.classList.contains('on'));
+    const newVal = currentlyOn ? 0 : val;
+    setState(newVal);
+    try {
+      const hash = await messageHash(text);
+      await apiFetch('/rate', { method: 'POST', body: JSON.stringify({ message_hash: hash, rating: newVal, model: modelKey, chat_id: chatId }) });
+    } catch { /* ratings are best-effort */ }
+    toast({ title: newVal === 1 ? 'Thanks — marked good' : newVal === -1 ? 'Noted — marked bad' : 'Rating cleared' }, 1200, newVal === -1 ? 'warn' : 'ok');
+  };
+  upBtn.addEventListener('click', () => rate(1));
+  downBtn.addEventListener('click', () => rate(-1));
 }
 
 // ---------- image turn ------------------
@@ -1495,6 +1557,9 @@ function renderFounderAdmin(p, j) {
     <div style="margin-top:10px;font-size:11px;color:var(--muted)">
       Total cost across all users: <b style="font-family:var(--mono)">$${t.total_cost_usd.toFixed(4)}</b>. Click "Manage" on any row for ban / mute / plan / blocked-models / delete-chats controls.
     </div>
+    <div style="margin-top:10px;text-align:right">
+      <button class="btn_primary" style="background:#4e2a8e" id="adm_ratings">Model ratings</button>
+    </div>
   `;
 
   const byEmail = Object.fromEntries(j.users.map(u => [u.email, u]));
@@ -1502,7 +1567,55 @@ function renderFounderAdmin(p, j) {
     const email = btn.getAttribute('data-manage');
     openUserManage(byEmail[email]);
   }));
+  p.querySelector('#adm_ratings').addEventListener('click', () => { closeModal(); openRatingsPanel(); });
 }
+
+async function openRatingsPanel() {
+  openModal('Model ratings', async (p) => {
+    p.innerHTML = '<div style="text-align:center;color:var(--muted);padding:20px">Loading…</div>';
+    const r = await apiFetch('/admin/ratings', { method: 'GET' });
+    if (!r.ok) { p.innerHTML = `<div style="color:var(--danger);padding:20px">Failed (${r.status})</div>`; return; }
+    const j = await r.json();
+    const modelRows = (j.by_model || []).map(row => {
+      const total = row.up + row.down;
+      const pctUp = total ? Math.round(100 * row.up / total) : 0;
+      return `
+        <tr style="border-bottom:1px solid var(--divider)">
+          <td style="padding:8px 6px;font-family:var(--mono);font-size:12px">${row.model}</td>
+          <td style="padding:8px 6px;text-align:right;font-family:var(--mono);font-size:12px;color:var(--ok)">+${row.up}</td>
+          <td style="padding:8px 6px;text-align:right;font-family:var(--mono);font-size:12px;color:var(--danger)">−${row.down}</td>
+          <td style="padding:8px 6px;text-align:right;font-family:var(--mono);font-size:12px">${pctUp}% good</td>
+        </tr>`;
+    }).join('') || '<tr><td colspan="4" style="padding:20px;text-align:center;color:var(--muted)">no ratings yet — users will thumbs up/down messages first</td></tr>';
+    const recent = (j.recent_downvotes || []).map(d => `
+      <div style="padding:8px 0;border-bottom:1px solid var(--divider);font-size:12px">
+        <div style="color:var(--muted);font-family:var(--mono)">${new Date(d.created_at).toLocaleString()} · ${d.email} · ${d.model_key || '—'}</div>
+        ${d.note ? `<div style="margin-top:4px">${escapeHtml(d.note)}</div>` : ''}
+        <div style="margin-top:2px;color:var(--muted);font-family:var(--mono);font-size:11px">hash: ${d.message_hash.slice(0, 16)}…</div>
+      </div>`).join('') || '<div style="padding:12px;color:var(--muted);text-align:center;font-size:12px">no downvotes yet</div>';
+
+    p.innerHTML = `
+      <h4 style="font-size:13px;margin:0 0 8px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Per model</h4>
+      <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:14px">
+        <table style="width:100%;border-collapse:collapse">
+          <thead style="background:var(--divider)"><tr>
+            <th style="padding:8px 6px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--muted)">Model</th>
+            <th style="padding:8px 6px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--muted)">Up</th>
+            <th style="padding:8px 6px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--muted)">Down</th>
+            <th style="padding:8px 6px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--muted)">% good</th>
+          </tr></thead>
+          <tbody>${modelRows}</tbody>
+        </table>
+      </div>
+      <h4 style="font-size:13px;margin:0 0 8px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Recent downvotes</h4>
+      <div style="max-height:260px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:0 10px">${recent}</div>
+      <div style="margin-top:12px;text-align:right"><button class="btn_primary" style="background:transparent;color:var(--fg);border:1px solid var(--border)" id="ratings_back">&lt; Back</button></div>
+    `;
+    p.querySelector('#ratings_back').addEventListener('click', () => { closeModal(); openFounderAdmin(); });
+  });
+}
+
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 async function openUserManage(u) {
   openModal('Manage ' + u.email, (p) => {
