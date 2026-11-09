@@ -106,15 +106,54 @@ async function handleDescribe(request, env, cors) {
       return json({ error: 'multipart with "image" file OR JSON with image_b64' }, 400, cors);
     }
 
+    // Anti-hallucination system prompt. The vision model will otherwise
+    // happily make up text that isn't in the image, invent objects, and
+    // guess at numbers it can't actually read. This constrains it hard.
+    const ANTI_HALLUCINATION = [
+      'You are looking at a real image. Only describe what you can directly see.',
+      'If you cannot read text clearly, say "unreadable" for that part — do NOT guess.',
+      'If something is partially hidden, say "partially visible" — do NOT fill in the gaps.',
+      'Never invent objects, people, numbers, colors, or text that are not plainly in the image.',
+      'If asked about something that is not in the image, say "not visible in the image".',
+      'Count only things you can actually see; do not estimate.',
+    ].join(' ');
+
+    const fullPrompt = `${ANTI_HALLUCINATION}\n\n${prompt}`;
+
+    // Word-search mode: when the caller flags it, ask for a strict JSON
+    // extraction so the client can solve the puzzle offline.
+    const asJson = fullPrompt.includes('<<WORD_SEARCH_MODE>>');
     const result = await env.AI.run(VISION_MODEL, {
       image: Array.from(imageBytes),
-      prompt,
-      max_tokens: 512,
+      prompt: asJson ? buildWordSearchPrompt(fullPrompt) : fullPrompt,
+      max_tokens: asJson ? 2048 : 1024,
     });
-    return json({ response: result.description || result.response || JSON.stringify(result), model: VISION_MODEL }, 200, cors);
+    return json({ response: result.description || result.response || JSON.stringify(result), model: VISION_MODEL, mode: asJson ? 'word_search' : 'describe' }, 200, cors);
   } catch (err) {
     return json({ error: 'vision failed', detail: err?.message || String(err) }, 500, cors);
   }
+}
+
+function buildWordSearchPrompt(baseAntiHallucination) {
+  return `${baseAntiHallucination}
+
+This image contains a WORD SEARCH puzzle. Extract it as strict JSON.
+
+Return ONLY a JSON object with this exact shape — no prose, no markdown fence, no backticks:
+
+{
+  "grid_rows": <integer>,
+  "grid_cols": <integer>,
+  "rows": ["ABCDEF", "GHIJKL", ...],
+  "words": ["WORD1", "WORD2", ...]
+}
+
+Rules:
+- Each entry in "rows" is exactly grid_cols characters, uppercase A-Z only, left to right as seen.
+- "rows" has exactly grid_rows entries.
+- "words" is the word list shown alongside the puzzle. If no list is visible, return an empty array.
+- If any letter is unreadable, use "?" at that position. Do NOT guess.
+- If this is not a word search, return {"error": "not a word search"}.`;
 }
 
 // ---------- shared security ----------

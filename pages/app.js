@@ -663,8 +663,12 @@ async function runChatTurn(userText, attachments, opts) {
   ensureChat(userText);
   const isDupe = !!(opts && opts.isDupe);
 
-  // if there are image attachments, describe them first via image worker, prepend to user message
+  // If there are image attachments, run them through the vision model. Pass
+  // the user's actual question so the vision model answers THAT instead of
+  // doing a generic "describe briefly" — and detect word searches so we
+  // trigger the solver path.
   let finalUserText = userText;
+  let wordSearchSolution = null;    // populated below if we detected one
   const imageDataUrls = [];
   if (attachments && attachments.length) {
     for (const a of attachments) {
@@ -672,20 +676,42 @@ async function runChatTurn(userText, attachments, opts) {
     }
     const describeTargets = attachments.filter(a => a.kind === 'image');
     if (describeTargets.length) {
+      const isWordSearch = /word\s*search|wordsearch|word-search/i.test(userText);
+      // Build the vision prompt. If the user typed a real question, forward
+      // it. Otherwise fall back to a detailed description.
+      const basePrompt = userText.trim()
+        ? `The user asks: ${userText.trim()}\n\nAnswer using ONLY what you can see in the image. If you don't know, say so.`
+        : 'Describe this image in detail, focusing on what is actually visible. Do not guess about anything unclear.';
+
       const descriptions = [];
-      for (const a of describeTargets) {
+      for (let i = 0; i < describeTargets.length; i++) {
+        const a = describeTargets[i];
         try {
           const b64 = a.dataUrl.split(',')[1];
+          const prompt = isWordSearch ? '<<WORD_SEARCH_MODE>>' : basePrompt;
           const r = await apiFetch('/describe', {
             method: 'POST',
-            body: JSON.stringify({ image_b64: b64, prompt: 'Describe this image briefly, focused on the main subject and style.' }),
+            body: JSON.stringify({ image_b64: b64, prompt }),
           });
           const d = await r.json();
-          if (d.response) descriptions.push(d.response);
+          if (!d.response) continue;
+
+          if (isWordSearch) {
+            const puzzle = parseWordSearchJson(d.response);
+            if (puzzle && puzzle.rows?.length) {
+              const solved = solveWordSearch(puzzle);
+              wordSearchSolution = { puzzle, solved, imageDataUrl: a.dataUrl };
+              descriptions.push(formatWordSearchForModel(puzzle, solved));
+            } else {
+              descriptions.push(d.response);
+            }
+          } else {
+            descriptions.push(d.response);
+          }
         } catch (_) {}
       }
       if (descriptions.length) {
-        finalUserText = 'The user attached ' + describeTargets.length + ' image(s). Vision description(s):\n\n' +
+        finalUserText = 'The user attached ' + describeTargets.length + ' image(s). Vision analysis (treat as ground truth; do not invent extra details):\n\n' +
           descriptions.map((d, i) => `[Image ${i + 1}]: ${d}`).join('\n\n') +
           '\n\nUser message: ' + userText;
       }
@@ -768,6 +794,17 @@ async function runChatTurn(userText, attachments, opts) {
   decorateCodeBlocks(body);
   if (routeInfo) {
     body.appendChild(renderMoeBadge(routeInfo));
+  }
+  // If a word search was detected and solved earlier, append the colored
+  // overlay image so the user can see every answer at a glance.
+  if (wordSearchSolution && wordSearchSolution.solved?.length) {
+    try {
+      const overlayUrl = renderWordSearchOverlay(wordSearchSolution.puzzle, wordSearchSolution.solved);
+      const wrap = document.createElement('div');
+      wrap.className = 'gen_image';
+      wrap.innerHTML = `<div class="gen_image_frame"><img src="${overlayUrl}" alt="word search with answers highlighted"></div><div class="gen_image_caption"><span class="cap">Solved ${wordSearchSolution.solved.length}/${wordSearchSolution.puzzle.words.length} words.</span></div>`;
+      body.appendChild(wrap);
+    } catch (e) { /* overlay is a nice-to-have */ }
   }
   addMessageActions(body, finalText);
 
@@ -1245,6 +1282,139 @@ function openUsageLimitModal(info) {
     p.querySelector('#ulm_close').addEventListener('click', closeModal);
     p.querySelector('#ulm_pick').addEventListener('click', () => { state.model = 'fast'; saveState(); updateModelPicker(); closeModal(); });
   });
+}
+
+// ---------- word search solver ----------
+// Takes vision-model output (expected JSON), returns { grid_rows, grid_cols,
+// rows: ["ABC...", ...], words: [...] } or null if parse fails.
+function parseWordSearchJson(text) {
+  try {
+    // Model sometimes wraps in ```json ... ``` despite being told not to.
+    const cleaned = text.replace(/```json\s*|```/g, '').trim();
+    // Find the outermost JSON object.
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+    if (start < 0 || end < 0) return null;
+    const obj = JSON.parse(cleaned.slice(start, end + 1));
+    if (obj.error) return null;
+    if (!Array.isArray(obj.rows) || !Array.isArray(obj.words)) return null;
+    // Normalize — strip whitespace, uppercase, check column width.
+    const rows = obj.rows.map(r => String(r).toUpperCase().replace(/\s+/g, ''));
+    const cols = rows[0]?.length || 0;
+    if (!cols || rows.some(r => r.length !== cols)) return null;
+    return {
+      grid_rows: rows.length,
+      grid_cols: cols,
+      rows,
+      words: obj.words.map(w => String(w).toUpperCase().replace(/\s+/g, '')).filter(Boolean),
+    };
+  } catch { return null; }
+}
+
+// Find every word in the grid across all 8 directions.
+// Returns [{ word, r1, c1, r2, c2, dir }] — r1/c1 is start, r2/c2 is end
+// (inclusive). Not-found words are omitted.
+function solveWordSearch(puzzle) {
+  const { rows, grid_rows: R, grid_cols: C, words } = puzzle;
+  const grid = rows.map(r => r.split(''));
+  const DIRS = [
+    { name: 'right', dr: 0, dc: 1 },
+    { name: 'left', dr: 0, dc: -1 },
+    { name: 'down', dr: 1, dc: 0 },
+    { name: 'up', dr: -1, dc: 0 },
+    { name: 'down-right', dr: 1, dc: 1 },
+    { name: 'down-left', dr: 1, dc: -1 },
+    { name: 'up-right', dr: -1, dc: 1 },
+    { name: 'up-left', dr: -1, dc: -1 },
+  ];
+  const hits = [];
+  for (const word of words) {
+    let found = null;
+    for (let r = 0; r < R && !found; r++) {
+      for (let c = 0; c < C && !found; c++) {
+        for (const d of DIRS) {
+          let match = true;
+          for (let i = 0; i < word.length; i++) {
+            const rr = r + d.dr * i, cc = c + d.dc * i;
+            if (rr < 0 || rr >= R || cc < 0 || cc >= C) { match = false; break; }
+            if (grid[rr][cc] !== word[i]) { match = false; break; }
+          }
+          if (match) {
+            found = { word, r1: r, c1: c, r2: r + d.dr * (word.length - 1), c2: c + d.dc * (word.length - 1), dir: d.name };
+            break;
+          }
+        }
+      }
+    }
+    if (found) hits.push(found);
+  }
+  return hits;
+}
+
+// Text representation the model can include in its reply.
+function formatWordSearchForModel(puzzle, solved) {
+  const total = puzzle.words.length;
+  const notFound = puzzle.words.filter(w => !solved.some(s => s.word === w));
+  const found = solved.map(s =>
+    `  • ${s.word} — ${s.dir}, row ${s.r1 + 1} col ${s.c1 + 1} → row ${s.r2 + 1} col ${s.c2 + 1}`
+  ).join('\n');
+  return `WORD SEARCH detected (${puzzle.grid_rows}×${puzzle.grid_cols}). Solved ${solved.length}/${total}:\n${found}${notFound.length ? `\n\nNot found in grid: ${notFound.join(', ')} (may be unreadable letters or the word list didn't match)` : ''}`;
+}
+
+// Render the solved word search as a canvas with colored lines over each
+// found word. Returns an <img> element the caller can insert into the chat.
+function renderWordSearchOverlay(puzzle, solved) {
+  const { grid_rows: R, grid_cols: C, rows } = puzzle;
+  const CELL = 36;
+  const PAD = 16;
+  const W = PAD * 2 + C * CELL;
+  const H = PAD * 2 + R * CELL;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+
+  // Background + grid.
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = '#ddd';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= R; i++) { ctx.beginPath(); ctx.moveTo(PAD, PAD + i * CELL); ctx.lineTo(PAD + C * CELL, PAD + i * CELL); ctx.stroke(); }
+  for (let j = 0; j <= C; j++) { ctx.beginPath(); ctx.moveTo(PAD + j * CELL, PAD); ctx.lineTo(PAD + j * CELL, PAD + R * CELL); ctx.stroke(); }
+
+  // Letters.
+  ctx.fillStyle = '#222';
+  ctx.font = '600 18px -apple-system,BlinkMacSystemFont,system-ui,sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (let r = 0; r < R; r++) {
+    for (let c = 0; c < C; c++) {
+      ctx.fillText(rows[r][c], PAD + c * CELL + CELL / 2, PAD + r * CELL + CELL / 2);
+    }
+  }
+
+  // Colored lines over each found word. Semi-transparent so letters still readable.
+  const PALETTE = ['#e74c3c', '#2ecc71', '#3498db', '#9b59b6', '#e67e22', '#1abc9c', '#f1c40f', '#ff6b9d', '#34495e'];
+  solved.forEach((s, i) => {
+    const color = PALETTE[i % PALETTE.length];
+    ctx.strokeStyle = color + 'aa';
+    ctx.lineWidth = CELL * 0.7;
+    ctx.lineCap = 'round';
+    const x1 = PAD + s.c1 * CELL + CELL / 2;
+    const y1 = PAD + s.r1 * CELL + CELL / 2;
+    const x2 = PAD + s.c2 * CELL + CELL / 2;
+    const y2 = PAD + s.r2 * CELL + CELL / 2;
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  });
+
+  // Re-draw letters on top so colors don't swallow them.
+  ctx.fillStyle = '#000';
+  ctx.font = '700 18px -apple-system,BlinkMacSystemFont,system-ui,sans-serif';
+  for (let r = 0; r < R; r++) {
+    for (let c = 0; c < C; c++) {
+      ctx.fillText(rows[r][c], PAD + c * CELL + CELL / 2, PAD + r * CELL + CELL / 2);
+    }
+  }
+
+  return cv.toDataURL('image/png');
 }
 
 // ---------- founder admin panel ----------
