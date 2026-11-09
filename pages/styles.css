@@ -37,7 +37,13 @@
 }
 
 * { box-sizing: border-box; }
-html, body { height: 100%; margin: 0; }
+html, body {
+  height: 100%; margin: 0;
+  /* Lock the page itself from rubber-banding / "pull to refresh" on iOS.
+     The chat area still scrolls normally inside .chat_main. */
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+}
 body {
   background: var(--bg); color: var(--fg); font-family: var(--sans);
   font-size: 16px; line-height: 1.5;
@@ -49,7 +55,12 @@ img { max-width: 100%; }
 aside {
   background: var(--sidebar); display: flex; flex-direction: column; min-width: 0;
 }
-.sb_top { padding: 10px; display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.sb_top {
+  padding: 10px;
+  padding-top: calc(10px + env(safe-area-inset-top, 0px));
+  padding-left: calc(10px + env(safe-area-inset-left, 0px));
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+}
 .sb_logo { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border-radius: 10px; }
 .sb_logo:hover { background: var(--sidebar_hover); }
 .sb_logo svg { width: 22px; height: 22px; color: var(--fg); }
@@ -103,7 +114,11 @@ aside {
 
 .chat { display: flex; flex-direction: column; min-width: 0; position: relative; }
 header {
-  position: sticky; top: 0; background: var(--bg); padding: 8px 12px;
+  position: sticky; top: 0; background: var(--bg);
+  padding: 8px 12px;
+  padding-top: calc(8px + env(safe-area-inset-top, 0px));
+  padding-left: calc(12px + env(safe-area-inset-left, 0px));
+  padding-right: calc(12px + env(safe-area-inset-right, 0px));
   display: flex; align-items: center; justify-content: space-between; gap: 8px; z-index: 10;
 }
 .hd_left { display: inline-flex; align-items: center; gap: 4px; min-width: 0; flex-wrap: wrap; }
@@ -185,15 +200,26 @@ header {
   width: 36px; height: 36px; border-radius: 10px; background: transparent;
   color: var(--fg); border: none; cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center;
+  -webkit-tap-highlight-color: transparent;
 }
 .icon_btn:hover { background: var(--sidebar_hover); }
 .icon_btn svg { width: 20px; height: 20px; }
 .hamburger { display: none; }
+/* Apple HIG touch target is 44px. Bump hamburger + gear on mobile so they're
+   actually tappable without squinting. */
+@media (max-width: 760px) {
+  .icon_btn { width: 44px; height: 44px; }
+  .icon_btn svg { width: 22px; height: 22px; }
+}
 
 main {
   flex: 1; overflow-y: auto; min-width: 0;
   padding: 0 16px;
   display: flex; justify-content: center;
+  /* Keep scroll momentum, but don't let overscroll bubble up to the body
+     (fixes "scroll up on iOS yanks me back down" + no stray page bounce). */
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 .inner {
   max-width: 768px; width: 100%; margin: 0 auto; padding: 24px 0 32px;
@@ -370,7 +396,13 @@ main {
 @keyframes toast_in { to { opacity: 1; transform: translateY(0); } }
 @keyframes toast_out { to { opacity: 0; transform: translateY(10px); } }
 
-footer { position: sticky; bottom: 0; background: var(--bg); padding: 4px 16px 14px; }
+footer {
+  position: sticky; bottom: 0; background: var(--bg);
+  padding: 4px 16px 14px;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  padding-left: calc(16px + env(safe-area-inset-left, 0px));
+  padding-right: calc(16px + env(safe-area-inset-right, 0px));
+}
 .composer_wrap { max-width: 768px; margin: 0 auto; }
 .composer { background: var(--user_bubble); border-radius: 28px; padding: 10px 10px 8px; display: flex; flex-direction: column; gap: 2px; }
 .composer textarea {

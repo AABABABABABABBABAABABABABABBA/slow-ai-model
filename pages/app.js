@@ -436,7 +436,9 @@ function renderConversation() {
     else addBotMsgEl(m.content, m.imageUrl);
   });
   renderChatMeter();
-  scrollDown();
+  // Opening a chat should land at the bottom (latest message), not somewhere
+  // in the middle because the previous chat's scroll pos stuck.
+  scrollDown(true);
 }
 function groupChats() {
   const now = Date.now();
@@ -510,7 +512,9 @@ function addUserMsgEl(text, index, images) {
   }
   row.appendChild(col);
   inner.appendChild(row);
-  scrollDown();
+  // User just sent — always scroll to show their message, even if they were
+  // reading something further up. Resets the sticky flag too.
+  scrollDown(true);
 }
 function addBotMsgEl(text, imageUrl) {
   const row = document.createElement('div');
@@ -1735,7 +1739,24 @@ function toast(obj, ms = 4000, variant) {
   setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 300); }, ms);
 }
 
-function scrollDown() { if (!state.settings.autoScroll) return; requestAnimationFrame(() => mainEl.scrollTo({ top: mainEl.scrollHeight, behavior: 'smooth' })); }
+// Auto-scroll during streaming — but ONLY when the user is already at the
+// bottom. Otherwise the stream would yank them back every chunk if they'd
+// scrolled up to read. "At bottom" = within 80px slack for iOS momentum.
+function isNearBottom(threshold = 80) {
+  return (mainEl.scrollHeight - mainEl.scrollTop - mainEl.clientHeight) < threshold;
+}
+let _userScrolled = false;
+mainEl.addEventListener('scroll', () => {
+  _userScrolled = !isNearBottom();
+}, { passive: true });
+function scrollDown(force = false) {
+  if (!state.settings.autoScroll) return;
+  if (!force && _userScrolled) return;         // user is reading above — don't yank
+  requestAnimationFrame(() => {
+    mainEl.scrollTo({ top: mainEl.scrollHeight, behavior: 'smooth' });
+    _userScrolled = false;
+  });
+}
 
 // ---------- init -----------------
 regenUsage();
