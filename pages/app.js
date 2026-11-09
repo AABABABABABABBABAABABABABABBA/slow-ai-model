@@ -440,37 +440,173 @@ function renderConversation() {
   // in the middle because the previous chat's scroll pos stuck.
   scrollDown(true);
 }
-function groupChats() {
+// Group non-archived chats by recency. Older (7-30d) and Much older (30+d)
+// are split so scrolling to a specific month is easier.
+function groupChats(chats) {
   const now = Date.now();
-  const g = { Today: [], Yesterday: [], 'Previous 7 days': [], Older: [] };
-  state.chats.forEach(c => {
+  const g = { Today: [], Yesterday: [], 'Previous 7 days': [], 'Previous 30 days': [], Older: [] };
+  chats.forEach(c => {
     const age = now - (c.createdAt || now);
     if (age < 86400000) g.Today.push(c);
     else if (age < 2 * 86400000) g.Yesterday.push(c);
     else if (age < 7 * 86400000) g['Previous 7 days'].push(c);
+    else if (age < 30 * 86400000) g['Previous 30 days'].push(c);
     else g.Older.push(c);
   });
   return g;
 }
+
+let _chatSearch = '';
+let _archivedOpen = false;
+
+function matchesSearch(c, q) {
+  if (!q) return true;
+  const hay = (c.title + ' ' + (c.messages || []).map(m => m.content || '').join(' ')).toLowerCase();
+  return hay.includes(q);
+}
+
+const ARCHIVE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="5" rx="1"/><path d="M4 9v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/></svg>';
+const UNARCHIVE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="5" rx="1"/><path d="M4 9v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9"/><path d="M12 12v6"/><path d="M9 15l3-3 3 3"/></svg>';
+const TRASH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>';
+const DOTS_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>';
+
+function buildChatRow(c, { archived = false } = {}) {
+  const el = document.createElement('div');
+  el.className = 'sb_chat' + (c.id === state.activeChat ? ' active' : '') + (archived ? ' archived' : '');
+  const title = document.createElement('span');
+  title.className = 'sb_chat_title';
+  title.textContent = c.title;
+  title.title = c.title;
+  title.addEventListener('click', () => { setActiveChat(c); closeSidebar(); });
+  // Double-click to rename inline.
+  title.addEventListener('dblclick', (e) => { e.preventDefault(); inlineRenameChat(title, c); });
+  el.appendChild(title);
+
+  // Per-row quick actions. On mobile these are always-shown; on desktop hover.
+  const actions = document.createElement('div');
+  actions.className = 'sb_chat_actions';
+  if (archived) {
+    actions.innerHTML = `
+      <button class="sb_chat_mini" data-a="restore" title="Restore to active" aria-label="restore">${UNARCHIVE_ICON}</button>
+      <button class="sb_chat_mini danger" data-a="del" title="Delete permanently" aria-label="delete">${TRASH_ICON}</button>
+    `;
+    actions.querySelector('[data-a="restore"]').addEventListener('click', (e) => { e.stopPropagation(); c.archived = false; saveState(); renderChatList(); toast({ title: 'Restored' }, 1200, 'ok'); });
+    actions.querySelector('[data-a="del"]').addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!confirm(`Delete "${c.title}" permanently? This can't be undone.`)) return;
+      state.chats = state.chats.filter(x => x.id !== c.id);
+      if (state.activeChat === c.id) setActiveChat(null);
+      saveState(); renderChatList();
+    });
+  } else {
+    actions.innerHTML = `
+      <button class="sb_chat_mini" data-a="archive" title="Archive" aria-label="archive">${ARCHIVE_ICON}</button>
+      <button class="sb_chat_dots" data-a="more" aria-label="options">${DOTS_ICON}</button>
+    `;
+    actions.querySelector('[data-a="archive"]').addEventListener('click', (e) => { e.stopPropagation(); c.archived = true; saveState(); renderChatList(); toast({ title: 'Archived — find it in the Archive section' }, 1800, 'ok'); });
+    actions.querySelector('[data-a="more"]').addEventListener('click', (e) => { e.stopPropagation(); openChatMenu(e.currentTarget, c); });
+  }
+  el.appendChild(actions);
+  return el;
+}
+
+function inlineRenameChat(titleEl, c) {
+  const input = document.createElement('input');
+  input.className = 'sb_rename_input';
+  input.value = c.title;
+  input.maxLength = 80;
+  titleEl.replaceWith(input);
+  input.focus();
+  input.setSelectionRange(0, input.value.length);
+  const commit = (save) => {
+    const v = input.value.trim();
+    if (save && v && v !== c.title) {
+      c.title = v;
+      saveState();
+    }
+    renderChatList();
+  };
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); commit(false); }
+  });
+  input.addEventListener('blur', () => commit(true));
+}
+
 function renderChatList() {
-  const groups = groupChats();
+  const q = _chatSearch.trim().toLowerCase();
   chatListEl.innerHTML = '';
+
+  // Search box (always rendered so it's reachable for any chat count).
+  const searchWrap = document.createElement('div');
+  searchWrap.className = 'sb_search_wrap';
+  searchWrap.innerHTML = `
+    <svg class="sb_search_icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+    <input id="sb_search" placeholder="Search chats" value="${q.replace(/"/g, '&quot;')}" />
+    ${q ? '<button class="sb_search_clear" aria-label="clear">&times;</button>' : ''}
+  `;
+  chatListEl.appendChild(searchWrap);
+  const searchInput = searchWrap.querySelector('#sb_search');
+  searchInput.addEventListener('input', (e) => { _chatSearch = e.target.value; renderChatList(); searchWrap.querySelector('#sb_search').focus(); });
+  const clear = searchWrap.querySelector('.sb_search_clear');
+  if (clear) clear.addEventListener('click', () => { _chatSearch = ''; renderChatList(); });
+
+  const active = state.chats.filter(c => !c.archived && matchesSearch(c, q));
+  const archived = state.chats.filter(c => c.archived && matchesSearch(c, q));
+
+  // Active chats, grouped.
+  const groups = groupChats(active);
+  let anyActive = false;
   Object.entries(groups).forEach(([g, chats]) => {
     if (!chats.length) return;
+    anyActive = true;
     const label = document.createElement('div');
     label.className = 'sb_label';
     label.textContent = g;
     chatListEl.appendChild(label);
-    chats.forEach(c => {
-      const el = document.createElement('div');
-      el.className = 'sb_chat' + (c.id === state.activeChat ? ' active' : '');
-      el.innerHTML = '<span class="sb_chat_title"></span><button class="sb_chat_dots" aria-label="options"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>';
-      el.querySelector('.sb_chat_title').textContent = c.title;
-      el.querySelector('.sb_chat_title').addEventListener('click', () => { setActiveChat(c); closeSidebar(); });
-      el.querySelector('.sb_chat_dots').addEventListener('click', (e) => { e.stopPropagation(); openChatMenu(e.currentTarget, c); });
-      chatListEl.appendChild(el);
-    });
+    chats.forEach(c => chatListEl.appendChild(buildChatRow(c)));
   });
+  if (!anyActive && q) {
+    const empty = document.createElement('div');
+    empty.className = 'sb_empty';
+    empty.textContent = `No active chats match "${q}"`;
+    chatListEl.appendChild(empty);
+  }
+
+  // Archive section — collapsible, with delete-all.
+  if (archived.length || state.chats.some(c => c.archived)) {
+    const header = document.createElement('button');
+    header.className = 'sb_archive_header' + (_archivedOpen ? ' open' : '');
+    header.innerHTML = `
+      <span class="chev">▸</span>
+      <span style="flex:1;text-align:left">Archive <span class="count">(${archived.length})</span></span>
+      ${archived.length ? `<span class="sb_archive_clear" title="Delete all archived">${TRASH_ICON}</span>` : ''}
+    `;
+    header.addEventListener('click', (e) => {
+      if (e.target.closest('.sb_archive_clear')) return;
+      _archivedOpen = !_archivedOpen;
+      renderChatList();
+    });
+    const clearAll = header.querySelector('.sb_archive_clear');
+    if (clearAll) clearAll.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!confirm(`Delete all ${archived.length} archived chat(s) permanently?`)) return;
+      state.chats = state.chats.filter(c => !c.archived);
+      if (state.activeChat && !state.chats.some(c => c.id === state.activeChat)) setActiveChat(null);
+      saveState(); renderChatList();
+    });
+    chatListEl.appendChild(header);
+    if (_archivedOpen) {
+      if (!archived.length) {
+        const empty = document.createElement('div');
+        empty.className = 'sb_empty';
+        empty.textContent = q ? `No archived chats match "${q}"` : 'No archived chats';
+        chatListEl.appendChild(empty);
+      } else {
+        archived.forEach(c => chatListEl.appendChild(buildChatRow(c, { archived: true })));
+      }
+    }
+  }
 }
 renderChatList();
 if (state.activeChat) {
@@ -1833,10 +1969,32 @@ function openUsageEmptyModal() {
 settingsBtn.addEventListener('click', openSettings);
 
 function openChatMenu(anchor, chat) {
-  openPopover(anchor, [
-    { title: 'Rename', onClick: () => { const n = prompt('New name', chat.title); if (n) { chat.title = n.trim(); saveState(); renderChatList(); } } },
-    { title: 'Delete', onClick: () => { state.chats = state.chats.filter(c => c.id !== chat.id); if (state.activeChat === chat.id) setActiveChat(null); saveState(); renderChatList(); } },
-  ]);
+  const items = [
+    {
+      title: 'Rename',
+      onClick: () => {
+        // Find the title span in the sidebar and swap it for an input inline.
+        const row = [...chatListEl.querySelectorAll('.sb_chat .sb_chat_title')]
+          .find(el => el.textContent === chat.title);
+        if (row) inlineRenameChat(row, chat);
+        else { const n = prompt('New name', chat.title); if (n) { chat.title = n.trim(); saveState(); renderChatList(); } }
+      },
+    },
+    chat.archived
+      ? { title: 'Restore from archive', onClick: () => { chat.archived = false; saveState(); renderChatList(); toast({ title: 'Restored' }, 1200, 'ok'); } }
+      : { title: 'Archive', onClick: () => { chat.archived = true; saveState(); renderChatList(); toast({ title: 'Archived' }, 1500, 'ok'); } },
+    { title: 'Duplicate', onClick: () => {
+        const copy = { ...chat, id: 'c_' + Math.random().toString(36).slice(2, 10), title: chat.title + ' (copy)', createdAt: Date.now(), archived: false, messages: (chat.messages || []).slice() };
+        state.chats.unshift(copy); saveState(); renderChatList();
+    } },
+    { title: 'Delete', onClick: () => {
+        if (!confirm(`Delete "${chat.title}"? This can't be undone.`)) return;
+        state.chats = state.chats.filter(c => c.id !== chat.id);
+        if (state.activeChat === chat.id) setActiveChat(null);
+        saveState(); renderChatList();
+    } },
+  ];
+  openPopover(anchor, items);
 }
 
 const modalRoot = document.createElement('div');
