@@ -1,0 +1,21 @@
+name = "chadgpt-ui"
+compatibility_date = "2025-10-01"
+pages_build_output_dir = "dist"
+
+[vars]
+CHAT_URL = "https://chadgpt-chat.corbyiscool.workers.dev"
+CODE_URL = "https://chadgpt-code.corbyiscool.workers.dev"
+IMAGE_URL = "https://chadgpt-image.corbyiscool.workers.dev"
+PAGES_ORIGIN = "https://chadgpt-ui.pages.dev"
+
+# Secrets (user must set via `wrangler pages secret put NAME --project-name chadgpt-ui`):
+#   JWT_SECRET
+#   WORKER_SESSION_SECRET
+#   FOUNDER_TOKEN     (optional, for emergency password reset)
+#   CF_API_TOKEN      (optional, for 24/7 deploy feature)
+#   CF_ACCOUNT_ID     (same)
+
+[[d1_databases]]
+binding = "DB"
+database_name = "chadgpt-users"
+database_id = "e0166cbb-1e40-45b1-986b-b865321506df"
