@@ -203,15 +203,24 @@ async function handleChat(request, env, cors) {
   const max_tokens = Math.min(Math.max(body.max_tokens || 1024, 1), 4096);
   const temperature = typeof body.temperature === 'number' ? Math.max(0, Math.min(2, body.temperature)) : 0.6;
 
-  // Try the requested model, then one retry on transient errors, then a
-  // cheap fallback. Workers AI is flaky under load — a raw 500 is a bad UX
-  // when a free 3B model almost certainly has capacity.
-  const FALLBACK = '@cf/meta/llama-3.2-3b-instruct';
-  const attempts = [
-    { model, label: 'primary' },
-    { model, label: 'retry' },
-    ...(model !== FALLBACK ? [{ model: FALLBACK, label: 'fallback' }] : []),
+  // Chain of fallback models from DIFFERENT model families — if one
+  // provider/vendor is saturated, another is likely free. Order picks
+  // small-and-fast first so the fallback feels smooth, not degraded.
+  const FALLBACK_CHAIN = [
+    '@cf/meta/llama-3.2-3b-instruct',
+    '@cf/meta/llama-3.1-8b-instruct-fast',
+    '@cf/mistral/mistral-7b-instruct-v0.1',
+    '@cf/google/gemma-7b-it',
+    '@cf/qwen/qwen1.5-14b-chat-awq',
   ];
+  // Build attempt list: primary (×2), then each fallback once, dropping
+  // duplicates so we don't re-try the primary twice in a row.
+  const chain = [model, ...FALLBACK_CHAIN.filter(m => m !== model)];
+  const attempts = [];
+  for (let i = 0; i < chain.length; i++) {
+    attempts.push({ model: chain[i], label: i === 0 ? 'primary' : `fallback-${chain[i].split('/')[2] || i}` });
+    if (i === 0) attempts.push({ model: chain[i], label: 'retry' });
+  }
   let lastErr = null;
   for (let i = 0; i < attempts.length; i++) {
     const a = attempts[i];

@@ -778,6 +778,55 @@ function submit() {
   runChatTurn(text || 'Describe this image.', atts, { isDupe });
 }
 
+// ---------- Mid-stream resume ----------
+// Called when the SSE connection dies partway through a reply. Re-POSTs
+// /chat with the partial text as context + an explicit continue nudge, so
+// whichever model answers next picks up exactly where the first one
+// stopped. maxAttempts caps how many times we'll retry a dropped reconnect.
+async function resumeStreamAfterDisconnect(originalMessages, modelMeta, bodyEl, partial, maxAttempts) {
+  let accumulated = partial;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    // Give the network a moment, then grow the gap on each retry.
+    await new Promise(r => setTimeout(r, 600 * attempt));
+    const continueMessages = [...originalMessages, {
+      role: 'assistant',
+      content: accumulated,
+    }, {
+      role: 'user',
+      content: '[System: your previous response was cut off mid-stream by a network drop. Continue from EXACTLY where you stopped — do not repeat anything, do not re-introduce yourself, just keep going from the next character.]',
+    }];
+    try {
+      const res = await apiFetch('/chat', {
+        method: 'POST',
+        body: JSON.stringify({
+          messages: continueMessages,
+          model: modelMeta.apiModel,
+          stream: true,
+          chad_mode: state.settings.chadMode,
+          temperature: state.settings.temperature,
+          fingerprint: collectClientFingerprint(),
+        }),
+      });
+      if (!res.ok) continue;
+      // Append a subtle marker the first time we resume so the user can see
+      // the response was stitched together (helps if they ever notice weird seams).
+      if (attempt === 1 && !accumulated.endsWith('…')) accumulated += '';
+      for await (const chunk of sseLines(res)) {
+        if (typeof chunk.response === 'string') {
+          accumulated += chunk.response;
+          bodyEl.innerHTML = renderMd(accumulated) + '<span class="typing_cursor"></span>';
+          scrollDown();
+        }
+      }
+      // Clean end — we're done.
+      return accumulated;
+    } catch (_) {
+      // Next iteration retries with a bigger delay.
+    }
+  }
+  return accumulated;
+}
+
 // ---------- SSE stream parser ----------
 async function* sseLines(res) {
   const reader = res.body.getReader();
@@ -932,11 +981,25 @@ async function runChatTurn(userText, attachments, opts) {
         errText = j.error || `${res.status} ${res.statusText}`;
       }
     } else {
-      for await (const chunk of sseLines(res)) {
-        if (typeof chunk.response === 'string') {
-          accumulated += chunk.response;
-          body.innerHTML = renderMd(accumulated) + '<span class="typing_cursor"></span>';
-          scrollDown();
+      try {
+        for await (const chunk of sseLines(res)) {
+          if (typeof chunk.response === 'string') {
+            accumulated += chunk.response;
+            body.innerHTML = renderMd(accumulated) + '<span class="typing_cursor"></span>';
+            scrollDown();
+          }
+        }
+      } catch (streamErr) {
+        // Stream died mid-reply (network drop, worker reset, idle timeout).
+        // If we got any text, try to resume up to 2 times from where we left
+        // off — the new request includes the partial response as context +
+        // "continue exactly from here" so the fallback model picks up cleanly.
+        if (streamErr?.name === 'AbortError') throw streamErr;
+        if (accumulated.length > 20) {
+          const resumed = await resumeStreamAfterDisconnect(apiMessages, m, body, accumulated, 2);
+          accumulated = resumed;
+        } else {
+          throw streamErr;
         }
       }
     }
@@ -1204,12 +1267,23 @@ function decorateCodeBlocks(container) {
     copyBtn.addEventListener('click', async () => { try { await navigator.clipboard.writeText(code.textContent); toast({ title: 'Copied' }, 1200, 'ok'); } catch {} });
     actions.appendChild(copyBtn);
 
-    if (['javascript', 'js', 'jsx'].includes(lang)) {
+    if (['javascript', 'js', 'jsx', 'typescript', 'ts'].includes(lang)) {
       const runBtn = document.createElement('button');
       runBtn.className = 'code_mini_btn run';
       runBtn.innerHTML = '▶ Run';
       runBtn.addEventListener('click', () => runJs(code.textContent, wrap));
       actions.appendChild(runBtn);
+
+      // Plus-only: deploy the code as a dedicated Cloudflare Worker that
+      // runs 24/7 for free under our account. Returns a .workers.dev URL.
+      if (state.plan === 'plus' || state.plan === 'unlimited') {
+        const deployBtn = document.createElement('button');
+        deployBtn.className = 'code_mini_btn run';
+        deployBtn.style.background = 'linear-gradient(135deg,#4e2a8e,#8a4fd1)';
+        deployBtn.innerHTML = '☁ Deploy 24/7';
+        deployBtn.addEventListener('click', () => deployCodeToWorker(code.textContent, lang, deployBtn));
+        actions.appendChild(deployBtn);
+      }
     }
     if (['html', 'htm'].includes(lang)) {
       const prevBtn = document.createElement('button');
@@ -1368,10 +1442,12 @@ function updateModelPicker() {
 updateModelPicker();
 
 profileBtn.addEventListener('click', () => {
+  const isPlus = state.plan === 'plus' || state.plan === 'unlimited';
   openPopover(profileBtn, [
-    { title: state.plan === 'plus' ? 'Manage plan (Plus)' : 'Upgrade to Plus', sub: state.plan === 'plus' ? '$20/mo · image gen enabled' : 'Images + 2.5× usage', onClick: () => openPaywallModal() },
+    { title: isPlus ? `Manage plan (${state.plan.toUpperCase()})` : 'Upgrade to Plus', sub: isPlus ? 'Images + 24/7 deploys' : 'Images + 2.5× usage', onClick: () => openPaywallModal() },
     { title: 'Settings', onClick: openSettings },
     { title: 'Container details', onClick: openContainerModal },
+    ...(isPlus ? [{ title: 'My deployments', sub: '24/7 hosted apps', onClick: openDeploymentsList }] : []),
     '-',
     { title: 'Clear all chats', onClick: () => { state.chats = []; saveState(); renderChatList(); setActiveChat(null); toast({ title: 'Cleared' }, 1500, 'ok'); } },
   ], 'right');
@@ -1616,6 +1692,107 @@ function renderWordSearchOverlay(puzzle, solved) {
 }
 
 // ---------- founder admin panel ----------
+// ---------- Deploy code → Cloudflare Worker ----------
+async function deployCodeToWorker(code, lang, buttonEl) {
+  // Simple prompt for a name. Falls back to auto-derive if blank.
+  const defaultName = ('app-' + Math.random().toString(36).slice(2, 7));
+  const name = prompt('Name your deployed app (letters/numbers/dashes, max 30 chars):', defaultName);
+  if (name === null) return;
+  const originalLabel = buttonEl.innerHTML;
+  buttonEl.innerHTML = '☁ Deploying…';
+  buttonEl.disabled = true;
+  try {
+    const r = await apiFetch('/deploy', {
+      method: 'POST',
+      body: JSON.stringify({ code, name: name || defaultName, runtime: lang.startsWith('t') ? 'ts' : 'js' }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      toast({ title: 'Deploy failed: ' + (j.error || r.status) }, 5000, 'err');
+      if (j.detail) console.error('deploy detail:', j.detail);
+      return;
+    }
+    openDeploySuccessModal(j);
+  } catch (e) {
+    toast({ title: 'Deploy failed: ' + e.message }, 4000, 'err');
+  } finally {
+    buttonEl.innerHTML = originalLabel;
+    buttonEl.disabled = false;
+  }
+}
+
+function openDeploySuccessModal(info) {
+  openModal('Deployed · 24/7 hosted', (p) => {
+    const url = info.url || '(url pending — check /deployments)';
+    p.innerHTML = `
+      <div style="padding:14px;border-radius:10px;background:linear-gradient(135deg,#2e7d32,#4caf50);color:#fff;margin-bottom:14px">
+        <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.9">Live</div>
+        <div style="font-size:16px;font-weight:700;margin-top:4px;font-family:var(--mono);word-break:break-all">${url}</div>
+        <div style="font-size:12px;opacity:.9;margin-top:6px">Runs 24/7 on Cloudflare's edge. No cold start. Free on the Workers free tier.</div>
+      </div>
+      <div style="font-size:12px;color:var(--muted);line-height:1.6">
+        Script name: <code>${info.name}</code><br>
+        Any changes you want? Ask ChadGPT to update the code, then Deploy again with the same name — it'll overwrite the live version in place.
+      </div>
+      <div style="margin-top:14px;display:flex;justify-content:space-between;gap:8px">
+        <button class="btn_primary" style="background:transparent;color:var(--fg);border:1px solid var(--border)" id="ds_list">My deployments</button>
+        <button class="btn_primary" id="ds_open">Open ${info.url ? '↗' : ''}</button>
+      </div>
+    `;
+    p.querySelector('#ds_list').addEventListener('click', () => { closeModal(); openDeploymentsList(); });
+    p.querySelector('#ds_open').addEventListener('click', () => {
+      if (info.url) window.open(info.url, '_blank');
+      else openDeploymentsList();
+    });
+  });
+}
+
+async function openDeploymentsList() {
+  openModal('My deployments', async (p) => {
+    p.innerHTML = '<div style="text-align:center;color:var(--muted);padding:20px">Loading…</div>';
+    const r = await apiFetch('/deployments', { method: 'GET' });
+    if (!r.ok) { p.innerHTML = `<div style="color:var(--danger);padding:20px">Failed (${r.status})</div>`; return; }
+    const j = await r.json();
+    const list = (j.deployments || []);
+    if (!list.length) {
+      p.innerHTML = '<div style="padding:20px;color:var(--muted);text-align:center">No deployments yet. Ask ChadGPT to write some JS/TS, then click the purple <b>☁ Deploy 24/7</b> button on the code block.</div>';
+      return;
+    }
+    const rows = list.map(d => `
+      <tr style="border-bottom:1px solid var(--divider)">
+        <td style="padding:8px 6px;font-size:13px"><b>${d.slug}</b><div style="font-size:11px;color:var(--muted);font-family:var(--mono)">${d.url || '(url pending)'}</div></td>
+        <td style="padding:8px 6px;text-align:right;font-family:var(--mono);font-size:12px;color:var(--muted)">${(d.size_bytes/1024).toFixed(1)} KB</td>
+        <td style="padding:8px 6px;text-align:right">
+          ${d.url ? `<a href="${d.url}" target="_blank" class="btn_primary" style="padding:4px 10px;font-size:12px;text-decoration:none;display:inline-block">Open ↗</a>` : ''}
+          <button class="btn_primary" style="padding:4px 10px;font-size:12px;background:#b23c3c" data-del="${d.script_name}">Delete</button>
+        </td>
+      </tr>
+    `).join('');
+    p.innerHTML = `
+      <div style="max-height:380px;overflow:auto;border:1px solid var(--border);border-radius:8px">
+        <table style="width:100%;border-collapse:collapse">
+          <thead style="background:var(--divider);position:sticky;top:0"><tr>
+            <th style="padding:8px 6px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--muted)">App</th>
+            <th style="padding:8px 6px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--muted)">Size</th>
+            <th style="padding:8px 6px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--muted)"></th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <div style="margin-top:10px;font-size:11px;color:var(--muted)">
+        Each app runs 24/7 on Cloudflare's edge, free. Max 10 per user. Delete removes it from Cloudflare + our database.
+      </div>
+    `;
+    p.querySelectorAll('[data-del]').forEach(btn => btn.addEventListener('click', async () => {
+      const name = btn.getAttribute('data-del');
+      if (!confirm('Delete ' + name + ' permanently?')) return;
+      const dr = await apiFetch('/deployments?name=' + encodeURIComponent(name), { method: 'DELETE' });
+      if (dr.ok) { toast({ title: 'Deleted' }, 1500, 'ok'); openDeploymentsList(); }
+      else toast({ title: 'Delete failed' }, 3000, 'err');
+    }));
+  });
+}
+
 async function openFounderAdmin() {
   openModal('Founder admin', async (p) => {
     p.innerHTML = '<div style="text-align:center;color:var(--muted);padding:20px">Loading users…</div>';

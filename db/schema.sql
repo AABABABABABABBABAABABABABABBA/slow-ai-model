@@ -101,3 +101,18 @@ CREATE TABLE IF NOT EXISTS message_ratings (
 CREATE INDEX IF NOT EXISTS idx_ratings_user  ON message_ratings(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ratings_model ON message_ratings(model_key, rating);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_rating_msg ON message_ratings(user_id, message_hash);
+
+-- User-deployed Workers. Each row is a running .workers.dev endpoint owned
+-- by the user, created via /api/deploy. Plus / unlimited only.
+CREATE TABLE IF NOT EXISTS deployments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  script_name TEXT NOT NULL UNIQUE,      -- chadgpt-user-<uid>-<slug>
+  slug TEXT NOT NULL,
+  url TEXT,                              -- live https://<name>.<subdomain>.workers.dev
+  size_bytes INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_deployments_user ON deployments(user_id, created_at DESC);
