@@ -12,7 +12,7 @@ enabled = true
 # Comma-separated allowed origins (your Pages URL + any custom domain).
 # Override in production via: npx wrangler secret put ALLOWED_ORIGINS
 [vars]
-ALLOWED_ORIGINS = "https://chadgpt-964.pages.dev,http://localhost:8788"
+ALLOWED_ORIGINS = "https://chadgpt-964.pages.dev,https://chadgpt-ui.pages.dev,http://localhost:8788,http://localhost:5173"
 # Pages Functions proxy sits between client and worker, so IP binding can't match.
 # Set to "true" only if clients call the worker directly.
 ENFORCE_IP_BINDING = "false"

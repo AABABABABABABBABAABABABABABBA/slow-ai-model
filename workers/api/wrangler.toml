@@ -1,0 +1,26 @@
+name = "chadgpt-api"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# Single front door. Clients only ever hit this URL. Internally it fans out
+# to the four backend workers (chat, code, image, license).
+#
+# To bind a custom domain (api.<yourdomain>), set up a Custom Domain in
+# Cloudflare dashboard → Workers → chadgpt-api → Triggers → Add Custom Domain.
+# DNS record for the domain MUST be on Cloudflare for Custom Domains to work.
+
+[vars]
+CHAT_URL    = "https://chadgpt-chat.corbyiscool.workers.dev"
+CODE_URL    = "https://chadgpt-code.corbyiscool.workers.dev"
+IMAGE_URL   = "https://chadgpt-image.corbyiscool.workers.dev"
+LICENSE_URL = "https://chadcode-license.corbyiscool.workers.dev"
+
+# Allowed origins for CORS. Add any new UI origin here; dispatcher rewrites
+# the CORS headers before the response goes to the browser.
+ALLOWED_ORIGINS = "https://chadgpt-964.pages.dev,https://chadgpt-ui.pages.dev,http://localhost:8788,http://localhost:5173"
+
+# Secret (set via `wrangler secret put DISPATCHER_TOKEN --name chadgpt-api`):
+#   DISPATCHER_TOKEN — injected as X-Dispatcher-Token on every upstream hop.
+#     When each backend is updated to require this token, direct hits to the
+#     backend workers' .workers.dev URLs can be rejected. Until then it's
+#     informational — backends ignore the header if they don't check for it.
