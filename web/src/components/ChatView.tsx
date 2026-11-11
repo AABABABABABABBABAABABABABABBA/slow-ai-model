@@ -58,10 +58,20 @@ export function ChatView({ user, onOpenSidebar, onOpenSettings }: { user: User; 
       msgs.push({ role: 'user', content: text });
 
       let acc = '';
+      // Batch store writes via rAF so a fast stream doesn't re-render the
+      // entire chat on every token. ~60fps instead of ~hundreds of updates
+      // per second shaves real latency on long replies and mobile devices.
+      let scheduled = false;
+      const flush = () => { store.updateLastMessage(c!.id, acc); scheduled = false; };
       for await (const chunk of streamChat(msgs, model.id, { signal: abortRef.current.signal })) {
         acc += chunk;
-        store.updateLastMessage(c!.id, acc);
+        if (!scheduled) {
+          scheduled = true;
+          requestAnimationFrame(flush);
+        }
       }
+      // Final flush so we never end with a trailing un-rendered chunk.
+      store.updateLastMessage(c!.id, acc);
       if (!acc.trim()) store.updateLastMessage(c!.id, '_(no response — the model returned nothing)_');
     } catch (err: any) {
       if (err.name !== 'AbortError') {

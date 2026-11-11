@@ -36,6 +36,13 @@
 <link rel="apple-touch-startup-image" href="/icons/splash-1668x2388.png" media="(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2)">
 <link rel="apple-touch-startup-image" href="/icons/splash-1536x2048.png" media="(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2)">
 
+<!-- Preconnect to the Cloudflare Worker endpoints so the first chat
+     request doesn't pay DNS + TCP + TLS cost (~150-300ms off TTFT). -->
+<link rel="preconnect" href="https://chadgpt-chat.corbyiscool.workers.dev" crossorigin>
+<link rel="preconnect" href="https://chadgpt-code.corbyiscool.workers.dev" crossorigin>
+<link rel="preconnect" href="https://chadgpt-image.corbyiscool.workers.dev" crossorigin>
+<link rel="dns-prefetch" href="https://chadgpt-chat.corbyiscool.workers.dev">
+
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>

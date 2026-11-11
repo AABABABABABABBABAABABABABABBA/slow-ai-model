@@ -39,8 +39,18 @@ const sources = [
   { tag: 'wiki',       heading: 'Wikipedia',                       detect: wikipedia.detect,     fetchContext: wikipedia.fetchContext },
 ];
 
-// Run every detector; for each hit, fetch context in parallel. Returns a
-// compact tag string and the merged context ready to prepend.
+// Run every detector; for each hit, fetch context in parallel.
+// Each fetch is capped at ENRICH_TIMEOUT_MS so one slow upstream (e.g. a
+// hung Wikipedia request) doesn't block the whole chat turn.
+const ENRICH_TIMEOUT_MS = 1500;
+
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`timeout:${label}`)), ms)),
+  ]);
+}
+
 export async function enrich(text) {
   if (!text) return { tag: 'skip', context: '' };
   const hits = [];
@@ -52,10 +62,11 @@ export async function enrich(text) {
 
   const results = await Promise.all(hits.map(async ({ s, hint }) => {
     try {
-      const ctx = await s.fetchContext(hint);
+      const ctx = await withTimeout(s.fetchContext(hint), ENRICH_TIMEOUT_MS, s.tag);
       return { tag: s.tag, heading: s.heading, ctx: ctx || '' };
-    } catch {
-      return { tag: s.tag, heading: s.heading, ctx: '' };
+    } catch (err) {
+      const reason = (err?.message || '').startsWith('timeout:') ? 'timeout' : 'err';
+      return { tag: s.tag, heading: s.heading, ctx: '', note: reason };
     }
   }));
 

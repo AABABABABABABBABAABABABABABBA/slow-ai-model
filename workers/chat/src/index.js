@@ -200,7 +200,16 @@ async function handleChat(request, env, cors) {
   }
 
   const stream = body.stream !== false;
-  const max_tokens = Math.min(Math.max(body.max_tokens || 1024, 1), 4096);
+  // Right-size max_tokens by prompt length. A 10-word question doesn't need
+  // 1024 tokens of headroom — models cruise toward whatever ceiling they're
+  // given, so a smaller cap = faster finish without losing quality. The user
+  // can always Continue if cut off.
+  const totalPromptChars = messages.reduce((n, m) => n + (m.content?.length || 0), 0);
+  const autoMaxTokens =
+    totalPromptChars < 120 ? 384 :
+    totalPromptChars < 500 ? 640 :
+    totalPromptChars < 2000 ? 1024 : 1536;
+  const max_tokens = Math.min(Math.max(body.max_tokens || autoMaxTokens, 1), 4096);
   const temperature = typeof body.temperature === 'number' ? Math.max(0, Math.min(2, body.temperature)) : 0.6;
 
   // Chain of fallback models from DIFFERENT model families — if one

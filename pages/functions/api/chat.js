@@ -53,14 +53,22 @@ export async function onRequestPost({ request, env }) {
   const requestedModel = body.model || 'fast';
 
   // ---- MoE auto routing ----
+  // For trivial prompts (<24 chars like "hi", "thanks", "lol"), skip the
+  // classifier entirely and go straight to fast — the routing cost isn't
+  // worth it and small models answer trivia faster anyway.
   let routedTo = null;
   if (requestedModel === 'auto') {
     const lastUser = body.messages?.filter(m => m.role === 'user').pop();
     const text = typeof lastUser?.content === 'string' ? lastUser.content : '';
-    routedTo = await moeRoute(text, { allowPlus: user.plan === 'plus' }, env);
-    body.model = routedTo.model;
-    if (routedTo.system) {
-      body.system = routedTo.system + (body.system ? '\n\n' + body.system : '');
+    if (text.length < 24) {
+      body.model = 'fast';
+      routedTo = { worker: 'chat', model: 'fast', expert: 'tiny', label: 'Fast (auto-skip)', icon: 'chat', reason: 'short prompt', confidence: 1, via: 'skip-moe' };
+    } else {
+      routedTo = await moeRoute(text, { allowPlus: user.plan === 'plus' }, env);
+      body.model = routedTo.model;
+      if (routedTo.system) {
+        body.system = routedTo.system + (body.system ? '\n\n' + body.system : '');
+      }
     }
   }
 

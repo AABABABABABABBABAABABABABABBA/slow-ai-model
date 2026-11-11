@@ -982,13 +982,27 @@ async function runChatTurn(userText, attachments, opts) {
       }
     } else {
       try {
+        // Batch DOM writes via rAF. renderMd() is non-trivial (markdown parse
+        // + highlight pass); re-running it on every single token wastes
+        // 60-80% of CPU on long replies. 60fps is plenty visibly, and TTFT
+        // doesn't suffer — the first chunk still renders immediately.
+        let scheduled = false;
+        const flushStream = () => {
+          body.innerHTML = renderMd(accumulated) + '<span class="typing_cursor"></span>';
+          scrollDown();
+          scheduled = false;
+        };
         for await (const chunk of sseLines(res)) {
           if (typeof chunk.response === 'string') {
             accumulated += chunk.response;
-            body.innerHTML = renderMd(accumulated) + '<span class="typing_cursor"></span>';
-            scrollDown();
+            if (!scheduled) {
+              scheduled = true;
+              requestAnimationFrame(flushStream);
+            }
           }
         }
+        // Final flush — never leave an unrendered trailing chunk.
+        body.innerHTML = renderMd(accumulated) + '<span class="typing_cursor"></span>';
       } catch (streamErr) {
         // Stream died mid-reply (network drop, worker reset, idle timeout).
         // If we got any text, try to resume up to 2 times from where we left
