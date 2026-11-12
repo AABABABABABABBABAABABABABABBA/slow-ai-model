@@ -371,6 +371,27 @@ const modelSubEl = document.getElementById('model_sub');
 const profileBtn = document.getElementById('profile_btn');
 const settingsBtn = document.getElementById('settings_btn');
 const attachBtn = document.getElementById('attach_btn');
+const imageBtn = document.getElementById('image_btn');
+if (imageBtn) {
+  imageBtn.addEventListener('click', () => {
+    const isPaid = state.plan === 'plus' || state.plan === 'unlimited';
+    if (!isPaid) { openPaywallModal('Image generation is a Plus feature'); return; }
+    const seed = input.value.trim();
+    if (!seed) {
+      // Prefill the input with a helpful starter so the user just finishes it.
+      input.value = '/image ';
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    } else if (!/^\/image\s+/i.test(seed) && !detectImageIntent(seed)) {
+      // Prefix with /image so the next send goes to the image worker.
+      input.value = '/image ' + seed;
+      input.focus();
+    } else {
+      // Already looks like an image prompt — send it.
+      input.form?.requestSubmit?.() ?? document.getElementById('send')?.click();
+    }
+  });
+}
 const newChatBtn = document.getElementById('new_chat');
 const chatListEl = document.getElementById('chat_list');
 const containerBtn = document.getElementById('container_badge');
@@ -815,9 +836,15 @@ function submit() {
     return;
   }
 
-  // Image paywall
-  if (/^\/image\s+/i.test(text)) {
-    if (state.plan !== 'plus') {
+  // Natural-language image intent — "draw/generate/make/create a picture
+  // of X", "image of Y", "render Z", etc. Also accepts the explicit
+  // /image command. If the intent fires, strip the trigger phrase so the
+  // model gets the subject, not the verb.
+  const imageIntent = detectImageIntent(text);
+
+  if (imageIntent) {
+    const isPaid = state.plan === 'plus' || state.plan === 'unlimited';
+    if (!isPaid) {
       openPaywallModal('Image generation is a Plus feature');
       return;
     }
@@ -834,8 +861,8 @@ function submit() {
   const atts = pendingAttachments.slice();
   pendingAttachments.length = 0;
   renderAttachments();
-  if (/^\/image\s+/i.test(text)) {
-    runImageTurn(text.replace(/^\/image\s+/i, ''), { isDupe });
+  if (imageIntent) {
+    runImageTurn(imageIntent, { isDupe });
     return;
   }
   runChatTurn(text || 'Describe this image.', atts, { isDupe });
@@ -1257,6 +1284,20 @@ function addMessageActions(container, text, opts = {}) {
 }
 
 // ---------- image turn ------------------
+// Returns the cleaned image prompt if the text asks for an image, else null.
+// Matches: "/image X", "draw X", "make/create/generate a picture/image of X",
+// "image of X", "picture of X", "render X", "sketch X".
+function detectImageIntent(text) {
+  if (!text) return null;
+  const slash = text.match(/^\/(?:image|img|draw|pic(?:ture)?)\s+(.+)$/i);
+  if (slash) return slash[1].trim();
+  const nl = text.match(/^(?:please\s+)?(?:can\s+you\s+)?(?:draw|sketch|render|generate|make|create|paint|design|produce)\s+(?:me\s+)?(?:an?\s+)?(?:image|picture|pic|photo|drawing|sketch|painting|art(?:work)?|poster|logo|illustration|render)\s+(?:of|showing|depicting|that\s+(?:is|shows))?\s*[:,-]?\s*(.+)$/i);
+  if (nl) return nl[1].trim().replace(/[.!?]+$/, '');
+  const of = text.match(/^(?:image|picture|photo|drawing|sketch|painting|art(?:work)?)\s+of\s+(.+)$/i);
+  if (of) return of[1].trim().replace(/[.!?]+$/, '');
+  return null;
+}
+
 async function runImageTurn(prompt, opts) {
   busy = true;
   setSendMode('stop');
