@@ -138,6 +138,22 @@
 
   <footer>
     <div class="composer_wrap" id="composer_wrap">
+      <!-- Sponsored card, rendered only for free-plan users and only once
+           they haven't dismissed it. Styling is Apple-system frosted glass;
+           JS inserts real ad content when a provider is configured. -->
+      <div class="ad_card" id="ad_card" hidden>
+        <button class="ad_card_close" id="ad_card_close" aria-label="dismiss">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/></svg>
+        </button>
+        <div class="ad_card_icon"><span>C</span></div>
+        <div class="ad_card_text">
+          <div class="ad_card_eyebrow">Sponsored · ChadGPT Free</div>
+          <div class="ad_card_title">Free. Genuinely free.</div>
+          <div class="ad_card_body">We earn nothing from free models. The ads you complete cover the cost of your usage.</div>
+        </div>
+        <a class="ad_card_cta" id="ad_card_cta" href="/ads" target="_blank" rel="noopener">Learn More</a>
+      </div>
+
       <div class="composer">
         <div class="attach_strip" id="attach_strip" hidden></div>
         <textarea id="input" rows="1" placeholder="Message ChadGPT. Type / for commands." autocomplete="off"></textarea>
@@ -155,9 +171,6 @@
         </div>
       </div>
       <div class="chat_meter" id="chat_meter" hidden>0 / 10,000 tokens in this chat</div>
-      <div class="footnote">
-        <span>ChadGPT · running on Cloudflare Workers AI</span>
-      </div>
     </div>
   </footer>
 </div>

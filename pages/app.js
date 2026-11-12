@@ -2795,3 +2795,39 @@ function buildAdHtml(p, slotId) {
   // Deferred — we wait for state.plan to be set after the fetchMe call in init.
   setTimeout(() => mountAdSlot(slot, 'sidebar'), 2000);
 })();
+
+// ---------- Sponsored ad card above the composer ----------
+// Shown only for free-plan users who haven't dismissed it this session.
+// The close button plays the reverse animation and removes the node.
+(function wireAdCard() {
+  const card = document.getElementById('ad_card');
+  const btn = document.getElementById('ad_card_close');
+  if (!card || !btn) return;
+
+  let dismissed = false;
+  try { dismissed = sessionStorage.getItem('ad_card_dismissed') === '1'; } catch {}
+
+  function maybeShow() {
+    if (dismissed) return;
+    if (state.plan !== 'free') return;
+    card.hidden = false;
+    // next tick so the initial state (opacity 0 / translated / blurred) paints first
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => card.classList.add('ad_card_in'));
+    });
+  }
+
+  function dismiss() {
+    card.classList.remove('ad_card_in');
+    card.classList.add('ad_card_out');
+    try { sessionStorage.setItem('ad_card_dismissed', '1'); } catch {}
+    const cleanup = () => card.remove();
+    // Match the 340ms transition duration from CSS.
+    setTimeout(cleanup, 380);
+  }
+
+  btn.addEventListener('click', (e) => { e.preventDefault(); dismiss(); });
+
+  // Wait until the init block has resolved the user's plan.
+  setTimeout(maybeShow, 1200);
+})();
