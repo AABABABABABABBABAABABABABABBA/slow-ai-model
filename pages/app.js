@@ -883,7 +883,8 @@ function submit() {
   // a clearly non-image question.
   let imageIntent = detectImageIntent(text);
   if (!imageIntent && isImageSticky() && !looksLikeImageExit(text)) {
-    const refined = detectImageRefinement(text, state._lastImagePrompt);
+    const chat = state.chats.find((c) => c.id === state.activeChatId);
+    const refined = detectImageRefinement(text, chat?._lastImagePrompt);
     if (refined) imageIntent = refined;
   }
 
@@ -897,7 +898,8 @@ function submit() {
 
   // User explicitly asked to leave image mode.
   if (isImageSticky() && looksLikeImageExit(text)) {
-    state._imageStickyUntil = 0;
+    const chat = state.chats.find((c) => c.id === state.activeChatId);
+    if (chat) chat._imageStickyUntil = 0;
     toast({ title: 'Leaving image mode — back to chat.' }, 2000, 'ok');
   }
 
@@ -1625,8 +1627,12 @@ function detectImageIntent(text) {
 }
 
 // True iff the user is inside the sticky window after a recent image gen.
+// Sticky state lives ON THE ACTIVE CHAT, not globally — switching chats
+// should not carry image mode over. (Previously: `state._imageStickyUntil`
+// was global and a new chat still thought it was mid-image-session.)
 function isImageSticky() {
-  return !!state._imageStickyUntil && Date.now() < state._imageStickyUntil;
+  const chat = state.chats.find((c) => c.id === state.activeChatId);
+  return !!chat && !!chat._imageStickyUntil && Date.now() < chat._imageStickyUntil;
 }
 
 // Explicit "get me out of image mode" signals. Keep tight — we don't want
@@ -1745,11 +1751,13 @@ async function runImageTurn(prompt, opts) {
     });
     history.push({ role: 'assistant', content: '[image: ' + prompt + ']', imageUrl: dataUrl });
     if (activeChatObj) { activeChatObj.messages = history.slice(); saveState(); }
-    // Enter / renew sticky image mode. Next ~10 minutes of free-text
-    // messages route through the image path by default, so the user
-    // doesn't have to re-type /image after the first successful gen.
-    state._lastImagePrompt = prompt;
-    state._imageStickyUntil = Date.now() + 10 * 60 * 1000;
+    // Enter / renew sticky image mode on THIS chat only — switching to
+    // a different chat should not inherit the sticky state.
+    if (activeChatObj) {
+      activeChatObj._lastImagePrompt = prompt;
+      activeChatObj._imageStickyUntil = Date.now() + 10 * 60 * 1000;
+      saveState();
+    }
   } catch (e) {
     const frame = body.querySelector('.gen_image_frame');
     frame.classList.remove('loading');
