@@ -185,6 +185,13 @@ export async function onRequestPost({ request, env }) {
   // ---- live data enrichment ----
   // Run all detectors against the last user message in parallel. Hits get
   // prepended as facts the model must prefer over its training data.
+  //
+  // Anti-hallucination guard: when a detector FIRED but came back empty
+  // (e.g. the Wikipedia catch-all tried both the exact title and an
+  // OpenSearch fallback and got nothing), prepend a short "do not guess"
+  // note to the user turn. Small Llama models will cheerfully invent a
+  // wrong answer ("Norwood is in British Columbia") when the context is
+  // empty — this preamble tells them to say they don't know instead.
   let enrichmentTag = 'skip';
   if (Array.isArray(body.messages) && body.messages.length) {
     const last = body.messages[body.messages.length - 1];
@@ -194,6 +201,12 @@ export async function onRequestPost({ request, env }) {
       if (result.context) {
         const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
         last.content = `[Live data fetched ${stamp}. Prefer these numbers over your training. Do not invent stats, prices, or outcomes. Copy dates, times, and numbers VERBATIM from the data below — do not reformat them, do not guess the year/month, do not omit fields.]\n\n${result.context}\n\n---\n\nUser question:\n${last.content}`;
+      } else if (result.tag && result.tag !== 'skip' && result.tag !== 'none') {
+        // At least one detector matched the question shape but every
+        // fetch came back empty (404, timeout, disambiguation with no
+        // good fallback). The question LOOKS factual, so guard against
+        // hallucinated answers.
+        last.content = `[Fact-lookup note: no reliable public data source returned info for this question. If you don't actually know the answer with high confidence, SAY SO plainly ("I don't have reliable information about that") and ask the user to clarify (e.g. which city / country / which X). Do NOT guess a plausible-sounding answer. Do NOT invent locations, dates, numbers, or facts. One sentence of "I don't know, can you be more specific?" is better than a wrong answer.]\n\n---\n\nUser question:\n${last.content}`;
       }
     }
   }
