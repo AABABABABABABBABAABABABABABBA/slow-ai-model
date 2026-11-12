@@ -9,6 +9,7 @@ CODE_URL = "https://chadgpt-code.corbyiscool.workers.dev"
 IMAGE_URL = "https://chadgpt-image.corbyiscool.workers.dev"
 LICENSE_WORKER_URL = "https://chadcode-license.corbyiscool.workers.dev"
 PAGES_ORIGIN = "https://chadgpt-964.pages.dev"
+HCAPTCHA_SITEKEY = "b2d6190e-9682-4a20-9342-b306da86c234"
 
 # Secrets (set via `wrangler pages secret put <NAME> --project-name chadgpt`):
 #   JWT_SECRET            — signs user session cookies (HS256)
