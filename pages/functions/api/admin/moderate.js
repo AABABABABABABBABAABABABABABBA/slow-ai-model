@@ -8,6 +8,7 @@
 // 'set_note' takes `value` = free-text note.
 
 import { getAuthedUser, isFounder, json, unauthorized, forbidden, badRequest } from '../../_lib/auth.js';
+import { readJsonBody, assertFreshNonce, ValidationError } from '../../_lib/validate.js';
 
 export async function onRequestPost({ request, env }) {
   const user = await getAuthedUser(request, env);
@@ -16,7 +17,18 @@ export async function onRequestPost({ request, env }) {
   if (!env.DB) return json({ error: 'DB not bound' }, { status: 500 });
 
   let body;
-  try { body = await request.json(); } catch { return badRequest('invalid JSON'); }
+  try {
+    body = await readJsonBody(request, {
+      method: 'POST',
+      maxBytes: 8 * 1024,
+      allowedKeys: ['email', 'action', 'value', 'note', 'nonce'],
+      requiredKeys: ['email', 'action', 'nonce'],
+    });
+    await assertFreshNonce(env, user, body.nonce, 'admin:moderate:' + body.action);
+  } catch (err) {
+    if (err instanceof ValidationError) return json(err.body, { status: err.status });
+    throw err;
+  }
   const email = (body.email || '').trim().toLowerCase();
   const action = body.action;
   if (!email) return badRequest('email required');

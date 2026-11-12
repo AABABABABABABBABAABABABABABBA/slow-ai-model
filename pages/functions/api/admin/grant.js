@@ -4,6 +4,7 @@
 // Body: { email: string, plan: 'unlimited' | 'plus' | 'free' }
 
 import { getAuthedUser, isFounder, json, unauthorized, forbidden, badRequest } from '../../_lib/auth.js';
+import { readJsonBody, assertFreshNonce, ValidationError } from '../../_lib/validate.js';
 
 export async function onRequestPost({ request, env }) {
   const user = await getAuthedUser(request, env);
@@ -12,7 +13,18 @@ export async function onRequestPost({ request, env }) {
   if (!env.DB) return json({ error: 'DB not bound' }, { status: 500 });
 
   let body;
-  try { body = await request.json(); } catch { return badRequest('invalid JSON'); }
+  try {
+    body = await readJsonBody(request, {
+      method: 'POST',
+      maxBytes: 4 * 1024,
+      allowedKeys: ['email', 'plan', 'nonce'],
+      requiredKeys: ['email', 'plan', 'nonce'],
+    });
+    await assertFreshNonce(env, user, body.nonce, 'admin:grant');
+  } catch (err) {
+    if (err instanceof ValidationError) return json(err.body, { status: err.status });
+    throw err;
+  }
   const email = (body.email || '').trim().toLowerCase();
   const plan = body.plan;
   if (!email) return badRequest('email required');

@@ -116,3 +116,15 @@ CREATE TABLE IF NOT EXISTS deployments (
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 CREATE INDEX IF NOT EXISTS idx_deployments_user ON deployments(user_id, created_at DESC);
+
+-- Replay protection: one-shot nonces the client sends on sensitive
+-- mutations (password change, admin grant/moderate, reset-password).
+-- Unique index enforces the "one-shot" property. Rows older than the
+-- 10-minute TTL are deleted lazily on next insert.
+CREATE TABLE IF NOT EXISTS used_nonces (
+  nonce TEXT NOT NULL UNIQUE,
+  user_id INTEGER NOT NULL,
+  op TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_nonce_age ON used_nonces(created_at);

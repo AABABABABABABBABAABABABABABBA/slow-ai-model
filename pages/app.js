@@ -54,6 +54,14 @@ async function apiFetch(path, opts = {}) {
   return res;
 }
 
+// 32-char lowercase hex nonce for one-shot replay protection on sensitive
+// endpoints. Server rejects reuse within a 10-minute window.
+function newNonce() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 async function fetchMe() {
   const r = await apiFetch('/me', { method: 'GET' });
   if (r.status === 401) { currentUser = null; return null; }
@@ -352,6 +360,11 @@ const sidebar = document.getElementById('sidebar');
 const scrim = document.getElementById('scrim');
 const hamburger = document.getElementById('hamburger');
 const mainEl = document.getElementById('main');
+if (mainEl) {
+  mainEl.addEventListener('scroll', () => {
+    _userScrolled = !isNearBottom();
+  }, { passive: true });
+}
 const modelBtn = document.getElementById('model_btn');
 const modelNameEl = document.getElementById('model_name');
 const modelSubEl = document.getElementById('model_sub');
@@ -2041,14 +2054,14 @@ async function openUserManage(u) {
 
     const refresh = async () => { closeModal(); await openFounderAdmin(); };
     const callMod = async (action, extra = {}) => {
-      const rr = await apiFetch('/admin/moderate', { method: 'POST', body: JSON.stringify({ email: u.email, action, ...extra }) });
+      const rr = await apiFetch('/admin/moderate', { method: 'POST', body: JSON.stringify({ email: u.email, action, nonce: newNonce(), ...extra }) });
       const jj = await rr.json().catch(() => ({}));
       if (!rr.ok) { toast({ title: jj.error || 'Action failed' }, 3000, 'err'); return false; }
       toast({ title: 'Done — ' + action }, 2500, 'ok');
       return true;
     };
     const callGrant = async (plan) => {
-      const rr = await apiFetch('/admin/grant', { method: 'POST', body: JSON.stringify({ email: u.email, plan }) });
+      const rr = await apiFetch('/admin/grant', { method: 'POST', body: JSON.stringify({ email: u.email, plan, nonce: newNonce() }) });
       const jj = await rr.json().catch(() => ({}));
       if (!rr.ok) { toast({ title: jj.error || 'Plan change failed' }, 3000, 'err'); return false; }
       toast({ title: `${u.email} → ${plan}` }, 2500, 'ok');
@@ -2335,7 +2348,7 @@ function openChangePasswordModal() {
       if (!cur || !nxt) { err.textContent = 'Fill both password fields.'; return; }
       if (nxt.length < 8) { err.textContent = 'New password must be at least 8 characters.'; return; }
       if (nxt !== cnf) { err.textContent = 'New password and confirmation do not match.'; return; }
-      const r = await apiFetch('/password', { method: 'POST', body: JSON.stringify({ current_password: cur, new_password: nxt }) });
+      const r = await apiFetch('/password', { method: 'POST', body: JSON.stringify({ current_password: cur, new_password: nxt, nonce: newNonce() }) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) { err.textContent = j.error || `Change failed (${r.status})`; return; }
       closeModal();
@@ -2419,20 +2432,22 @@ function toast(obj, ms = 4000, variant) {
   setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 300); }, ms);
 }
 
-// Auto-scroll during streaming — but ONLY when the user is already at the
-// bottom. Otherwise the stream would yank them back every chunk if they'd
-// scrolled up to read. "At bottom" = within 80px slack for iOS momentum.
-function isNearBottom(threshold = 80) {
-  return (mainEl.scrollHeight - mainEl.scrollTop - mainEl.clientHeight) < threshold;
+// Auto-scroll state. These were moved here so they're initialized before
+// setActiveChat() runs during module init (which calls scrollDown via
+// addUserMsgEl). With `let` at module bottom the TDZ threw a ReferenceError
+// on first load: "Cannot access '_userScrolled' before initialization".
+// Now we use `var` so the declaration is hoisted + initialized to undefined,
+// which the `!_userScrolled` check treats correctly as false.
+var _userScrolled = false;
+function isNearBottom(threshold) {
+  if (!mainEl) return true;
+  return (mainEl.scrollHeight - mainEl.scrollTop - mainEl.clientHeight) < (threshold || 80);
 }
-let _userScrolled = false;
-mainEl.addEventListener('scroll', () => {
-  _userScrolled = !isNearBottom();
-}, { passive: true });
-function scrollDown(force = false) {
+function scrollDown(force) {
   if (!state.settings.autoScroll) return;
-  if (!force && _userScrolled) return;         // user is reading above — don't yank
+  if (!force && _userScrolled) return;
   requestAnimationFrame(() => {
+    if (!mainEl) return;
     mainEl.scrollTo({ top: mainEl.scrollHeight, behavior: 'smooth' });
     _userScrolled = false;
   });
