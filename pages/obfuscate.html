@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ChadGPT — Lua Obfuscator</title>
+<meta name="theme-color" content="#0e0f13">
+<link rel="icon" href="/icons/favicon-32.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    color-scheme: dark;
+    --fg:#e6e6e6; --muted:#8f8f98; --bg:#0e0f13; --card:#171922; --border:#262a35;
+    --accent:#8a4fd1; --accent2:#4e2a8e; --ok:#2e7d32; --err:#e06666;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--fg); font-family:var(--sans); line-height:1.5; -webkit-text-size-adjust:100%; }
+  main { max-width:1000px; margin:0 auto; padding:28px 20px 72px; padding-top:calc(28px + env(safe-area-inset-top, 0px)); }
+  .back { display:inline-flex; align-items:center; gap:6px; color:var(--muted); text-decoration:none; font-size:13px; margin-bottom:18px; }
+  .back:hover { color:var(--fg); }
+  .logo { display:inline-flex; width:52px; height:52px; border-radius:13px; background:linear-gradient(135deg, var(--accent2), var(--accent)); align-items:center; justify-content:center; color:#fff; font-size:26px; font-weight:800; margin-bottom:14px; }
+  h1 { margin:0 0 4px; font-size:30px; letter-spacing:-0.02em; font-weight:700; }
+  .sub { color:var(--muted); margin:0 0 24px; font-size:14px; }
+
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width: 760px) { .grid { grid-template-columns:1fr; } }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px; }
+  .card_head { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+  .card_head h2 { margin:0; font-size:12px; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted); font-weight:600; }
+  .card_head .count { font-size:11px; color:var(--muted); font-family:var(--mono); }
+
+  textarea { width:100%; box-sizing:border-box; resize:vertical; min-height:360px; background:var(--bg); color:var(--fg); border:1px solid var(--border); border-radius:10px; padding:12px; font-family:var(--mono); font-size:12.5px; line-height:1.5; outline:none; }
+  textarea:focus { border-color:#4e2a8e; box-shadow:0 0 0 3px #4e2a8e44; }
+
+  .controls { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin:16px 0; padding:12px 14px; background:var(--card); border:1px solid var(--border); border-radius:12px; }
+  .seg { display:inline-flex; background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:3px; }
+  .seg_opt { padding:6px 12px; font-size:13px; font-weight:500; color:var(--muted); cursor:pointer; border-radius:8px; transition:all 0.15s; user-select:none; }
+  .seg_opt.on { background:linear-gradient(135deg, var(--accent2), var(--accent)); color:#fff; }
+  .seg_opt:not(.on):hover { color:var(--fg); }
+
+  button, .btn { background:linear-gradient(135deg, var(--accent2), var(--accent)); color:#fff; border:none; border-radius:9px; padding:8px 16px; font-weight:600; font-size:13px; cursor:pointer; font-family:inherit; }
+  button:disabled { opacity:0.5; cursor:not-allowed; }
+  .ghost { background:transparent; color:var(--fg); border:1px solid var(--border); }
+  .ghost:hover:not(:disabled) { border-color:#4e2a8e; }
+
+  .stats { display:flex; flex-wrap:wrap; gap:8px; font-size:11.5px; color:var(--muted); margin-top:10px; font-family:var(--mono); }
+  .stat { padding:3px 8px; background:var(--bg); border:1px solid var(--border); border-radius:6px; }
+  .notes { font-size:12px; color:var(--muted); margin:8px 0 0; padding:10px 12px; background:#8a4fd111; border:1px solid #8a4fd133; border-radius:8px; line-height:1.55; }
+  .err { color:var(--err); padding:10px 14px; background:#e0666622; border:1px solid #e0666688; border-radius:8px; margin:12px 0; font-size:13px; }
+  .honest { font-size:12px; color:var(--muted); background:var(--card); border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin-top:16px; line-height:1.55; }
+  .honest b { color:var(--fg); font-weight:600; }
+
+  .flex { display:flex; gap:8px; align-items:center; }
+</style>
+</head>
+<body>
+<main>
+  <a class="back" href="/">← back to chat</a>
+  <div class="logo">{ }</div>
+  <h1>Lua Obfuscator</h1>
+  <p class="sub">Protect your Lua source — Roblox, FiveM, Love2D, game mods. Paste, pick a level, copy out.</p>
+
+  <div class="controls">
+    <div class="flex">
+      <span style="font-size:12px; color:var(--muted); font-weight:500">level</span>
+      <div class="seg" role="tablist">
+        <div class="seg_opt" data-level="light">Light</div>
+        <div class="seg_opt" data-level="heavy">Heavy</div>
+        <div class="seg_opt on" data-level="extreme">Extreme</div>
+      </div>
+    </div>
+    <div style="flex:1"></div>
+    <button class="ghost" id="clear_btn">Clear</button>
+    <button id="go_btn">Obfuscate</button>
+  </div>
+
+  <div id="err_box"></div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="card_head">
+        <h2>Input</h2>
+        <span class="count" id="in_count">0 bytes</span>
+      </div>
+      <textarea id="input" placeholder="-- Paste your Lua source here
+local playerHealth = 100
+print('hello, world')" spellcheck="false"></textarea>
+    </div>
+
+    <div class="card">
+      <div class="card_head">
+        <h2>Output</h2>
+        <div class="flex">
+          <span class="count" id="out_count">0 bytes</span>
+          <button class="ghost" id="copy_btn" style="padding:4px 10px; font-size:11.5px" disabled>Copy</button>
+          <button class="ghost" id="download_btn" style="padding:4px 10px; font-size:11.5px" disabled>Download</button>
+        </div>
+      </div>
+      <textarea id="output" placeholder="// output appears here" readonly spellcheck="false"></textarea>
+      <div class="stats" id="stats_row"></div>
+      <div class="notes" id="notes_row" style="display:none"></div>
+    </div>
+  </div>
+
+  <div class="honest">
+    <b>Honest note.</b> Lua obfuscation is <b>never 100%</b> — anyone with a Lua interpreter can hook <code style="background:var(--bg); padding:1px 5px; border-radius:4px">load()</code> and dump the decoded source. Extreme mode blocks casual reading, grep-based skimming, and most automated scrapers, but it will not stop a determined reverse engineer. For true protection you need a custom VM or bytecode-only distribution (not supported here yet).
+  </div>
+</main>
+<script type="module" src="/obfuscate.js"></script>
+</body>
+</html>

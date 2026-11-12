@@ -878,7 +878,42 @@ function submit() {
     runAvatarTurn(sys, { isDupe });
     return;
   }
+
+  // /obfuscate <lua code>  — or natural-language intent like "obfuscate
+  // this lua", "protect my lua", "make this lua unreadable". Seeds the
+  // obfuscator page with the code and navigates there. Keeping it client-
+  // side means zero AI tokens get spent on what is a pure utility.
+  const obf = detectObfuscateIntent(text);
+  if (obf) {
+    try { sessionStorage.setItem('obfuscate_seed', obf.source); } catch {}
+    window.location.href = '/obfuscate';
+    return;
+  }
+
   runChatTurn(text || 'Describe this image.', atts, { isDupe });
+}
+
+// Detect an obfuscation ask. Returns { source } if the message is clearly
+// "obfuscate this Lua" with code attached, else null. Looks for an explicit
+// /obfuscate command, a triple-backtick lua block, or the phrases
+// "obfuscate", "protect", "make unreadable" paired with "lua".
+function detectObfuscateIntent(text) {
+  if (!text) return null;
+  // Explicit command: /obfuscate <code>
+  const cmd = text.match(/^\/obfuscate(?:\s+([\s\S]+))?$/i);
+  if (cmd) return { source: (cmd[1] || '').trim() };
+
+  // Look for code fence with lua tag — strongest signal.
+  const fence = text.match(/```(?:lua)?\s*\n([\s\S]+?)\n```/i);
+  const lower = text.toLowerCase();
+  const verb = /\b(obfuscate|protect|hide|encrypt|make\s+unreadable|lock|secure)\b/i.test(text);
+  const lang = /\blua\b/i.test(text);
+  if (verb && lang && fence) return { source: fence[1].trim() };
+  // "obfuscate this" with lua-looking code (local/function/end keywords) and no fence
+  if (verb && /\b(local\s|function\s|end\b|print\(|then\b|do\b)/.test(text) && lang) {
+    return { source: text };
+  }
+  return null;
 }
 
 // ---------- Mid-stream resume ----------
@@ -1754,6 +1789,7 @@ profileBtn.addEventListener('click', () => {
     { title: isPlus ? `Manage plan (${state.plan.toUpperCase()})` : 'Upgrade to Plus', sub: isPlus ? 'Images + 24/7 deploys' : 'Images + 2.5× usage', onClick: () => openPaywallModal() },
     { title: 'Settings', onClick: openSettings },
     { title: 'ChadGPT CLI', sub: 'Coding agent for your terminal', onClick: () => { window.location.href = '/cli'; } },
+    { title: 'Lua Obfuscator', sub: 'Protect scripts — run-only, unreadable', onClick: () => { window.location.href = '/obfuscate'; } },
     { title: 'Container details', onClick: openContainerModal },
     ...(isPlus ? [{ title: 'My deployments', sub: '24/7 hosted apps', onClick: openDeploymentsList }] : []),
     '-',
