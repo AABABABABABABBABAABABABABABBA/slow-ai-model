@@ -886,6 +886,76 @@ function submit() {
 // /chat with the partial text as context + an explicit continue nudge, so
 // whichever model answers next picks up exactly where the first one
 // stopped. maxAttempts caps how many times we'll retry a dropped reconnect.
+// Detect a reply that's probably cut off: unclosed code fence, unclosed
+// triple-quote, trailing comma/paren/dot ellipsis, or ends without
+// terminal punctuation after a long enough run.
+function looksTruncated(text) {
+  if (!text) return false;
+  // Unclosed ``` fence?
+  const fenceCount = (text.match(/```/g) || []).length;
+  if (fenceCount % 2 === 1) return true;
+  // Trailing "..." — model literally said it would continue
+  if (/\.\.\.\s*$/.test(text)) return true;
+  // Ends in a way that suggests the sentence wasn't finished:
+  // open paren / bracket / brace counts
+  const opens = (text.match(/[([{]/g) || []).length;
+  const closes = (text.match(/[)\]}]/g) || []).length;
+  if (opens - closes > 1) return true;
+  // Long reply (>600 chars) that doesn't end with terminal punctuation
+  // and the last line isn't a header/list marker.
+  const trimmed = text.trimEnd();
+  if (trimmed.length < 600) return false;
+  const lastChar = trimmed.slice(-1);
+  if ('.?!":;}])`'.includes(lastChar)) return false;
+  return true;
+}
+
+// Silent server-hop continue: if the stream ended but the reply looks
+// unfinished, re-ask the chain with the partial as context + "continue".
+// The model that answers may be a different one from the chain — the user
+// never sees the seam. Updates bodyEl live so the hop is invisible.
+async function silentAutoContinue(originalMessages, modelMeta, bodyEl, partial, maxAttempts) {
+  let accumulated = partial;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const continueMsgs = [
+      ...originalMessages,
+      { role: 'assistant', content: accumulated },
+      { role: 'user', content: '[System: your previous response was cut off by the token budget. Continue from EXACTLY where you stopped, do not repeat anything, do not re-introduce yourself, do not add a header. Just keep going from the next character.]' },
+    ];
+    let res;
+    try {
+      res = await apiFetch('/chat', {
+        method: 'POST',
+        body: JSON.stringify({
+          messages: continueMsgs,
+          model: modelMeta.apiModel,
+          stream: true,
+          chad_mode: state.settings.chadMode,
+          temperature: state.settings.temperature,
+          fingerprint: collectClientFingerprint(),
+          captcha_receipt: getCaptchaReceipt?.() ?? null,
+          max_tokens: 1200,
+        }),
+      });
+    } catch { break; }
+    if (!res.ok) break;
+    let gotAnything = false;
+    try {
+      for await (const chunk of sseLines(res)) {
+        if (typeof chunk.response === 'string' && chunk.response) {
+          accumulated += chunk.response;
+          gotAnything = true;
+          bodyEl.innerHTML = renderMd(accumulated) + '<span class="typing_cursor"></span>';
+          scrollDown();
+        }
+      }
+    } catch { /* stream died — fall through and maybe loop again */ }
+    if (!gotAnything) break;
+    if (!looksTruncated(accumulated)) break;   // we're done
+  }
+  return accumulated;
+}
+
 async function resumeStreamAfterDisconnect(originalMessages, modelMeta, bodyEl, partial, maxAttempts) {
   let accumulated = partial;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -1154,6 +1224,16 @@ async function runChatTurn(userText, attachments, opts) {
     if (e.name !== 'AbortError') errText = e.message || 'request failed';
   }
   currentAbort = null;
+
+  // If the stream ended cleanly but the response is cut off mid-code-block
+  // or mid-sentence (likely hit max_tokens), silently continue so the user
+  // sees ONE seamless reply. Does up to 2 auto-continues, 1200 tokens each,
+  // so a large code block eventually completes without the user clicking.
+  if (!errText && accumulated.length > 40 && looksTruncated(accumulated)) {
+    try {
+      accumulated = await silentAutoContinue(apiMessages, m, body, accumulated, 2);
+    } catch (e) { /* keep what we have */ }
+  }
 
   const finalText = errText ? ('Error: ' + errText) : (accumulated || '(no response)');
   body.innerHTML = renderMd(finalText);
@@ -1673,6 +1753,7 @@ profileBtn.addEventListener('click', () => {
   openPopover(profileBtn, [
     { title: isPlus ? `Manage plan (${state.plan.toUpperCase()})` : 'Upgrade to Plus', sub: isPlus ? 'Images + 24/7 deploys' : 'Images + 2.5× usage', onClick: () => openPaywallModal() },
     { title: 'Settings', onClick: openSettings },
+    { title: 'ChadGPT CLI', sub: 'Coding agent for your terminal', onClick: () => { window.location.href = '/cli'; } },
     { title: 'Container details', onClick: openContainerModal },
     ...(isPlus ? [{ title: 'My deployments', sub: '24/7 hosted apps', onClick: openDeploymentsList }] : []),
     '-',
