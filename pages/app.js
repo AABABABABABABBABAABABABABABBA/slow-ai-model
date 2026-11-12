@@ -960,7 +960,119 @@ function submit() {
     return;
   }
 
+  // Weather: render a live card instead of a model paraphrase. Zero AI
+  // tokens burned — straight open-meteo fetch.
+  const weatherIntent = detectWeatherIntent(text);
+  if (weatherIntent) {
+    runWeatherTurn(text, weatherIntent.location);
+    return;
+  }
+
   runChatTurn(text || 'Describe this image.', atts, { isDupe });
+}
+
+// Weather intent matches the same triggers as the server-side enricher
+// so we don't surprise the user: if they'd get the weather data mixed
+// into a model reply before, now they get a card embed.
+function detectWeatherIntent(text) {
+  if (!text) return null;
+  const triggers = /\b(weather|forecast|temperature|rain(ing)?|snow(ing)?|sunny|cloudy|storm|humidity|wind(y)?|degrees|celsius|fahrenheit|how (hot|cold|warm))\b/i;
+  if (!triggers.test(text)) return null;
+  // Optional "in / at / for <Place>" — can be lowercased, several words.
+  const m = text.match(/\b(?:in|at|for)\s+([A-Za-z][A-Za-z .\-']{1,60}(?:,\s*[A-Za-z][A-Za-z .\-']{1,40})?)/);
+  const location = m ? m[1].replace(/[.?!,]+$/, '').trim() : '';
+  return { location };
+}
+
+async function runWeatherTurn(userText, location) {
+  busy = true;
+  setSendMode('stop');
+  ensureChat(userText || 'weather');
+  history.push({ role: 'user', content: userText });
+  if (activeChatObj) { activeChatObj.messages = history.slice(); saveState(); }
+  addUserMsgEl(userText, history.length - 1, null);
+
+  const botRow = document.createElement('div');
+  botRow.className = 'msg_row bot';
+  const body = document.createElement('div');
+  body.className = 'bot_body';
+  body.innerHTML = '<div class="thinking"><span class="thinking_dot"></span><span class="thinking_text">Fetching weather…</span></div>';
+  botRow.appendChild(body);
+  inner.appendChild(botRow);
+  scrollDown();
+
+  try {
+    const url = '/api/weather' + (location ? '?location=' + encodeURIComponent(location) : '');
+    const r = await fetch(url, { credentials: 'include' });
+    const j = await r.json();
+    if (!r.ok || !j.ok) {
+      body.innerHTML = `<div style="padding:10px 14px;border:1px solid var(--border);border-radius:10px;background:var(--bg);font-size:13px;color:var(--muted)">Couldn't fetch weather${location ? ` for "${location}"` : ''}: ${(j && j.error) || r.status}</div>`;
+      history.push({ role: 'assistant', content: `Weather lookup failed: ${(j && j.error) || r.status}` });
+    } else {
+      body.innerHTML = renderWeatherCard(j);
+      history.push({ role: 'assistant', content: `[weather card: ${j.location.name}, now ${j.current.temp_c}°C ${j.current.label}]`, weather: j });
+    }
+    if (activeChatObj) { activeChatObj.messages = history.slice(); saveState(); }
+  } catch (e) {
+    body.innerHTML = `<div style="padding:10px 14px;border:1px solid var(--border);border-radius:10px;background:var(--bg);font-size:13px;color:var(--muted)">Weather error: ${escapeHtml(e.message || String(e))}</div>`;
+  }
+  busy = false;
+  setSendMode('send');
+  deductUsage(50);
+  renderChatMeter();
+}
+
+function weatherIconSvg(name, size) {
+  const s = size || 36;
+  const stroke = 'currentColor';
+  // Hand-rolled minimal icons — simple strokes, matches our button icons.
+  const paths = {
+    sun:        '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>',
+    'cloud-sun':'<path d="M12 2v2M18 4l-1.5 1.5M20 10h2M4.5 5.5L6 7M2 12h2"/><circle cx="12" cy="10" r="3"/><path d="M19 17a4 4 0 1 0-7.5-1.8A3.5 3.5 0 1 0 10.5 22h8.1a3.5 3.5 0 0 0 .4-5z"/>',
+    cloud:      '<path d="M18 17.58A5 5 0 0 0 17 8a6 6 0 1 0-11.84 2A4 4 0 0 0 6 18h12a2 2 0 0 0 .58-.42z"/>',
+    fog:        '<path d="M5 8h14M3 12h18M6 16h14M4 20h16"/>',
+    drizzle:    '<path d="M4 15a5 5 0 0 1 2-9.5 6 6 0 0 1 11.5 2A4 4 0 0 1 18 15"/><path d="M8 19v2M12 18v3M16 19v2"/>',
+    rain:       '<path d="M4 15a5 5 0 0 1 2-9.5 6 6 0 0 1 11.5 2A4 4 0 0 1 18 15"/><path d="M8 18v4M12 17v5M16 18v4"/>',
+    snow:       '<path d="M4 15a5 5 0 0 1 2-9.5 6 6 0 0 1 11.5 2A4 4 0 0 1 18 15"/><path d="M8 19l.01 0M12 20l.01 0M16 19l.01 0M10 22l.01 0M14 22l.01 0"/>',
+    storm:      '<path d="M4 15a5 5 0 0 1 2-9.5 6 6 0 0 1 11.5 2A4 4 0 0 1 18 15"/><polyline points="13 13 11 17 14 17 12 22"/>',
+  };
+  return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.cloud}</svg>`;
+}
+
+function renderWeatherCard(d) {
+  const { location: loc, current: cur, hourly, daily } = d;
+  const subtitle = [loc.admin1, loc.country].filter(Boolean).join(', ');
+  const hourRows = hourly.map((h) => {
+    const label = new Date(h.time + ':00').toLocaleTimeString([], { hour: 'numeric' });
+    return `<div class="wx_hour"><span class="wx_h_time">${label}</span><span class="wx_h_icon">${weatherIconSvg(h.icon, 18)}</span><span class="wx_h_temp">${h.temp_c}°</span>${h.precip_pct != null && h.precip_pct > 10 ? `<span class="wx_h_rain">${h.precip_pct}%</span>` : ''}</div>`;
+  }).join('');
+  const dayLabel = (iso) => {
+    const d = new Date(iso + 'T12:00:00');
+    return d.toLocaleDateString([], { weekday: 'short' });
+  };
+  const dayRows = daily.map((day, i) => {
+    return `<div class="wx_day"><span class="wx_d_name">${i === 0 ? 'Today' : dayLabel(day.date)}</span><span class="wx_d_icon">${weatherIconSvg(day.icon, 20)}</span><span class="wx_d_label">${day.label}</span><span class="wx_d_temp"><b>${day.hi_c}°</b> <span style="opacity:.6">${day.lo_c}°</span></span></div>`;
+  }).join('');
+  return `
+    <div class="wx_card">
+      <div class="wx_head">
+        <div class="wx_loc">
+          <div class="wx_place">${escapeHtml(loc.name)}</div>
+          ${subtitle ? `<div class="wx_sub">${escapeHtml(subtitle)}</div>` : ''}
+        </div>
+        <div class="wx_now">
+          <div class="wx_now_icon">${weatherIconSvg(cur.icon, 56)}</div>
+          <div class="wx_now_temp">${cur.temp_c}°<span class="wx_unit">C</span></div>
+        </div>
+      </div>
+      <div class="wx_cond">${escapeHtml(cur.label)} · feels ${cur.feels_c}°</div>
+      <div class="wx_meta">
+        <span>Humidity ${cur.humidity_pct}%</span>
+        <span>Wind ${cur.wind_kmh} km/h</span>
+      </div>
+      <div class="wx_hours">${hourRows}</div>
+      <div class="wx_days">${dayRows}</div>
+    </div>`;
 }
 
 // Detect an artifact ask. Returns:
@@ -2315,8 +2427,20 @@ async function openDeploymentsList() {
     if (!r.ok) { p.innerHTML = `<div style="color:var(--danger);padding:20px">Failed (${r.status})</div>`; return; }
     const j = await r.json();
     const list = (j.deployments || []);
+    const header = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px">
+        <div style="font-size:13px;color:var(--muted)">${list.length} / 10 apps · each runs 24/7 on Cloudflare's edge, free.</div>
+        <div style="display:flex;gap:6px">
+          <label class="btn_primary" style="padding:6px 14px;font-size:12px;cursor:pointer;background:linear-gradient(135deg,#4e2a8e,#8a4fd1)">
+            ⬆ Upload & deploy
+            <input id="deploy_upload" type="file" accept=".js,.ts,.mjs,.cjs,.jsx,.tsx,text/javascript,application/javascript,text/typescript" hidden>
+          </label>
+        </div>
+      </div>
+      <div id="deploy_upload_status" style="margin-bottom:10px;font-size:12px"></div>`;
     if (!list.length) {
-      p.innerHTML = '<div style="padding:20px;color:var(--muted);text-align:center">No deployments yet. Ask ChadGPT to write some JS/TS, then click the purple <b>☁ Deploy 24/7</b> button on the code block.</div>';
+      p.innerHTML = header + '<div style="padding:20px;color:var(--muted);text-align:center;border:1px dashed var(--border);border-radius:10px">No deployments yet. Upload a .js/.ts file above, or ask ChadGPT to write some code and click <b>☁ Deploy 24/7</b> on the code block.</div>';
+      wireDeployUpload(p);
       return;
     }
     const rows = list.map(d => `
@@ -2329,7 +2453,7 @@ async function openDeploymentsList() {
         </td>
       </tr>
     `).join('');
-    p.innerHTML = `
+    p.innerHTML = header + `
       <div style="max-height:380px;overflow:auto;border:1px solid var(--border);border-radius:8px">
         <table style="width:100%;border-collapse:collapse">
           <thead style="background:var(--divider);position:sticky;top:0"><tr>
@@ -2341,9 +2465,10 @@ async function openDeploymentsList() {
         </table>
       </div>
       <div style="margin-top:10px;font-size:11px;color:var(--muted)">
-        Each app runs 24/7 on Cloudflare's edge, free. Max 10 per user. Delete removes it from Cloudflare + our database.
+        Uploaded files are scanned before deploy — we block RAT/C2, DDoS tools, Discord selfbots, torrent clients, crypto miners, and credential grabbers. If a legit security-test file gets flagged, email the founder.
       </div>
     `;
+    wireDeployUpload(p);
     p.querySelectorAll('[data-del]').forEach(btn => btn.addEventListener('click', async () => {
       const name = btn.getAttribute('data-del');
       if (!confirm('Delete ' + name + ' permanently?')) return;
@@ -2351,6 +2476,48 @@ async function openDeploymentsList() {
       if (dr.ok) { toast({ title: 'Deleted' }, 1500, 'ok'); openDeploymentsList(); }
       else toast({ title: 'Delete failed' }, 3000, 'err');
     }));
+  });
+}
+
+function wireDeployUpload(root) {
+  const input = root.querySelector('#deploy_upload');
+  const status = root.querySelector('#deploy_upload_status');
+  if (!input) return;
+  input.addEventListener('change', async () => {
+    const f = input.files && input.files[0];
+    if (!f) return;
+    if (f.size > 200_000) {
+      status.innerHTML = `<div style="color:var(--danger);padding:8px 12px;background:#e0666622;border:1px solid #e0666688;border-radius:6px">File too large: ${(f.size/1024).toFixed(1)} KB (limit 200 KB).</div>`;
+      input.value = '';
+      return;
+    }
+    status.innerHTML = `<div style="color:var(--muted);display:flex;align-items:center;gap:8px"><span class="queue_spin" style="width:12px;height:12px;border-radius:50%;border:2px solid rgba(127,127,127,.3);border-top-color:#8a4fd1;animation:spin 0.9s linear infinite;display:inline-block"></span><span>Scanning <b>${escapeHtml(f.name)}</b> for abuse patterns…</span></div>`;
+    const text = await f.text();
+    const slug = f.name.replace(/\.(js|ts|mjs|cjs|jsx|tsx)$/i, '').toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 30);
+    const r = await apiFetch('/deploy', {
+      method: 'POST',
+      body: JSON.stringify({ code: text, filename: f.name, name: slug || 'upload' }),
+    });
+    const j = await r.json().catch(() => ({}));
+    input.value = '';
+    if (r.status === 403 && j.error === 'deploy_blocked') {
+      status.innerHTML = `
+        <div style="color:#e06666;padding:10px 12px;background:#e0666622;border:1px solid #e0666688;border-radius:6px">
+          <div style="font-weight:600;margin-bottom:4px">Blocked by abuse scanner</div>
+          <div style="font-size:12px;opacity:.9">Category: <code>${escapeHtml(j.category || '?')}</code></div>
+          <div style="font-size:12px;opacity:.9;margin-top:4px">Reason: ${escapeHtml(j.reason || 'unknown')}</div>
+          ${j.snippet ? `<div style="font-size:11px;opacity:.75;margin-top:6px;font-family:var(--mono);padding:4px 6px;background:rgba(0,0,0,.2);border-radius:4px">…${escapeHtml(j.snippet)}…</div>` : ''}
+          <div style="font-size:11px;opacity:.7;margin-top:6px">We block C2/RAT, DDoS, Discord selfbots, torrent, crypto miners, credential grabbers, and spam tools. If this is a legit security-test file, email the founder to allowlist it.</div>
+        </div>`;
+      return;
+    }
+    if (!r.ok) {
+      status.innerHTML = `<div style="color:var(--danger);padding:8px 12px;background:#e0666622;border:1px solid #e0666688;border-radius:6px">Deploy failed (${r.status}): ${escapeHtml(j.error || j.detail || 'unknown')}</div>`;
+      return;
+    }
+    status.innerHTML = `<div style="color:#8bd38f;padding:8px 12px;background:#2e7d3222;border:1px solid #2e7d3288;border-radius:6px">Deployed. <a href="${j.url}" target="_blank" style="color:#b58cff">${j.url}</a></div>`;
+    // Refresh the list so the new row shows.
+    setTimeout(() => openDeploymentsList(), 1200);
   });
 }
 

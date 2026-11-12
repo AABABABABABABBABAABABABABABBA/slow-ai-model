@@ -20,6 +20,7 @@
 //   is required — see the README section at the bottom of deploy.js.
 
 import { getAuthedUser, json, unauthorized, forbidden, badRequest } from '../_lib/auth.js';
+import { scanCode } from '../_lib/code-scanner.js';
 
 const MAX_WORKERS_PER_USER = 10;
 const MAX_CODE_BYTES = 200_000;    // 200 KB per script
@@ -42,8 +43,27 @@ export async function onRequestPost({ request, env }) {
   let body;
   try { body = await request.json(); } catch { return badRequest('invalid JSON'); }
   const code = typeof body.code === 'string' ? body.code : '';
+  const filename = typeof body.filename === 'string' ? body.filename : '';
   if (!code.trim()) return badRequest('code required');
   if (code.length > MAX_CODE_BYTES) return badRequest(`code too large (max ${MAX_CODE_BYTES} bytes)`);
+
+  // Abuse scan — pattern blocklist for C2 / RAT / DDoS / Discord selfbots
+  // / torrent / crypto miners / credential grabbers / spam. Honest limit:
+  // this is signature matching, not real malware analysis, so obfuscated
+  // payloads still get through. For actual malware scanning, wire in a
+  // real engine (VirusTotal, ClamAV). Blocking message tells the user
+  // exactly what rule tripped so a legit security-test deploy can be
+  // appealed instead of bouncing silently.
+  const scan = scanCode(code, filename);
+  if (!scan.ok) {
+    return json({
+      error: 'deploy_blocked',
+      category: scan.category,
+      reason: scan.why,
+      snippet: scan.snippet,
+      detail: `Your file was blocked by the abuse scanner. Category: ${scan.category}. Reason: ${scan.why}. If this is a legit security-testing project, email the founder with the file so we can review.`,
+    }, { status: 403 });
+  }
 
   // Normalize name: user-chosen slug or derived from code's first comment.
   const rawName = (body.name || deriveName(code)).trim().toLowerCase();
