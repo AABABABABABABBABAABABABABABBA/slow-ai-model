@@ -201,28 +201,56 @@ if [[ -d "$TUI_SRC" ]]; then
     tar -C "$TUI_SRC" --exclude='node_modules' --exclude='dist' -cf - . | tar -C packages/tui-commands -xf -
   fi
 
-  # Best-effort replacement of OpenCode's built-in banner anywhere it's
-  # hardcoded. We look for files that mention `OPENCODE` in a banner-y
-  # context (blocky unicode OR the literal string in a Go/TS file) and
-  # patch them. Finding nothing is fine — the opencode source changes
-  # over time and a quiet miss is better than a loud false-positive.
-  echo "[5d] swap any hardcoded opencode banner for the ChadCode block art"
-  BANNER_CHAR='▀'
-  BANNER_FILES=$(grep -rlE "${BANNER_CHAR}" --include='*.go' --include='*.ts' --include='*.tsx' --include='*.js' . 2>/dev/null || true)
-  for f in $BANNER_FILES; do
-    # If this file has two or more rows of block-art characters within
-    # 10 lines of each other, assume it's a banner and rewrite the
-    # whole block to the ChadCode variant. Keep it simple with perl.
-    if perl -0777 -ne 'exit 1 unless /(?:[█▀▄].*\n){2,}/' "$f" 2>/dev/null; then
-      perl -0777 -i -pe '
-        s{((?:[^\n]*[█▀▄][^\n]*\n){3,10})}{
-          "  █▀▀ █ █ █▀█ █▀▄ █▀▀ █▀█ █▀▄ █▀▀\n" .
-          "  █   █▀█ █▀█ █ █ █   █ █ █ █ █▀▀\n" .
-          "  ▀▀▀ ▀ ▀ ▀ ▀ ▀▀  ▀▀▀ ▀▀▀ ▀▀  ▀▀▀\n"
-        }e
-      ' "$f" && echo "   -> patched banner in $f"
+  # Overwrite the opencode block-art logo at its known location.
+  # (packages/tui/src/logo.ts — four-char words left+right.)
+  if [[ -f packages/tui/src/logo.ts ]]; then
+    cat > packages/tui/src/logo.ts <<'LOGO'
+export const logo = {
+  left: ["                   ", "█▀▀█ █__█ █▀▀█ █▀▀█", "█___ █▀▀█ █▀▀█ █__█", "▀▀▀▀ ▀__▀ ▀__▀ ▀▀▀▀"],
+  right: ["             ▄     ", "█▀▀▀ █▀▀█ █▀▀█ █▀▀█", "█___ █__█ █__█ █^^^", "▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀"],
+}
+
+export const go = {
+  left: ["    ", "█▀▀▀", "█_^█", "▀▀▀▀"],
+  right: ["    ", "█▀▀█", "█__█", "▀▀▀▀"],
+}
+LOGO
+    echo "   -> replaced logo.ts (chad+code)"
+  fi
+
+  # Bundle ChadGPT-only model catalog so /models shows our models,
+  # not models.dev's full list.
+  SNAPSHOT_SRC="$(cd "$(dirname "$0")/.." && pwd)/provider/chadgpt-snapshot.txt"
+  if [[ -f "$SNAPSHOT_SRC" && -f packages/core/src/models-dev/snapshot.txt ]]; then
+    cp "$SNAPSHOT_SRC" packages/core/src/models-dev/snapshot.txt
+    # Lower the "at least 100 providers" floor — our catalog has 1.
+    if [[ -f packages/core/script/models-snapshot.ts ]]; then
+      sed -i 's/const MINIMUM_PROVIDERS = 100/const MINIMUM_PROVIDERS = 1/' packages/core/script/models-snapshot.ts
     fi
-  done
+    echo "   -> replaced snapshot.txt with ChadGPT-only catalog"
+  fi
+
+  # Remove /connect. Only one provider is wired in this fork, so a
+  # Connect-an-integration dialog has nothing to offer.
+  if [[ -f packages/tui/src/app.tsx ]]; then
+    perl -0777 -i -pe '
+      s{
+        \s*\{\s*
+        name:\s*"provider\.connect"[\s\S]{10,600}?
+        category:\s*"Integration",\s*
+        \},
+      }{\n      // /connect command removed in ChadCode (one provider wired via license).\n}gx
+    ' packages/tui/src/app.tsx
+    echo "   -> removed /connect command from app.tsx"
+  fi
+  if [[ -f packages/tui/src/feature-plugins/sidebar/footer.tsx ]]; then
+    perl -0777 -i -pe '
+      s{
+        \s*<text[^>]*>OpenCode\ includes\ free\ models[\s\S]{10,800}?/connect</text>\s*</box>
+      }{\n          <text fg={props.context.theme.text.muted}>ChadCode ships with ChadGPT free models — start coding right away.</text>\n          <text fg={props.context.theme.text.muted}>Upgrade to Plus for ChadGPT Pro (Llama 3), ChadCoder (DeepSeek), and ChadGPT Ultra (Llama 3.3 70B).</text>}gx
+    ' packages/tui/src/feature-plugins/sidebar/footer.tsx
+    echo "   -> removed /connect sidebar link"
+  fi
 fi
 
 PROMPT_SRC_DIR="$(cd "$(dirname "$0")/.." && pwd)/prompts"
