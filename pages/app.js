@@ -129,7 +129,7 @@ function showAuthGate(initialMode = 'login') {
       <div class="gate_logo">
         <div class="gate_mark">C</div>
         <h2 class="gate_title">Welcome to ChadGPT</h2>
-        <p class="gate_sub">Direct AI on Cloudflare — free to sign up.</p>
+        <p class="gate_sub">Free to sign up.</p>
       </div>
       <div class="gate_tabs" role="tablist">
         <button type="button" class="gate_tab" data-tab="login" role="tab">Log in</button>
@@ -143,7 +143,6 @@ function showAuthGate(initialMode = 'login') {
         <button type="submit" class="gate_submit" id="auth_submit"><span class="label">Log in</span></button>
         <div class="gate_err" id="auth_err" role="alert" aria-live="polite"></div>
       </form>
-      <p class="gate_fine">By continuing you agree this is a demo on Cloudflare free tier.<br>Your password is PBKDF2-hashed server-side before storage.</p>
     </div>
   `;
   document.body.appendChild(gate);
