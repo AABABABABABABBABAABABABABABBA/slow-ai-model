@@ -159,11 +159,20 @@ aside {
 .sb_archive_clear:hover { background: rgba(178,60,60,0.15); color: var(--danger); }
 .sb_archive_clear svg { width: 14px; height: 14px; }
 
-.sb_bottom { padding: 8px; border-top: 1px solid var(--border); }
-.sb_user {
-  display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; cursor: pointer;
+.sb_bottom {
+  padding: 8px;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--border);
+  position: relative; z-index: 2;
 }
-.sb_user:hover { background: var(--sidebar_hover); }
+.sb_user {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px;
+  cursor: pointer; user-select: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(255,255,255,0.08);
+  pointer-events: auto;
+}
+.sb_user:hover, .sb_user:active { background: var(--sidebar_hover); }
 .sb_avatar {
   width: 28px; height: 28px; border-radius: 50%;
   background: linear-gradient(135deg, #19c37d, #0b7dd1); color: white;
@@ -254,14 +263,26 @@ header {
 .paywall .featured button { background: #9b6bd8; }
 @media (max-width: 500px) { .paywall .plans { grid-template-columns: 1fr; } }
 
-.header_right { display: inline-flex; align-items: center; gap: 4px; }
+.header_right {
+  display: inline-flex; align-items: center; gap: 4px;
+  position: relative; z-index: 2;
+  flex-shrink: 0;
+}
 .pill_btn {
   display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px;
   border-radius: 999px; border: 1px solid var(--border); background: transparent;
   color: var(--fg); font-family: inherit; font-size: 13px; cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(255,255,255,0.08);
+  min-width: 36px; min-height: 36px; justify-content: center;
 }
-.pill_btn:hover { background: var(--sidebar_hover); }
+.pill_btn:hover, .pill_btn:active { background: var(--sidebar_hover); }
 .pill_btn svg { width: 16px; height: 16px; }
+@media (max-width: 760px) {
+  /* Bigger touch target on mobile, Apple HIG 44px minimum. */
+  .pill_btn { min-width: 44px; min-height: 44px; }
+  .pill_btn svg { width: 20px; height: 20px; }
+}
 .icon_btn {
   width: 36px; height: 36px; border-radius: 10px; background: transparent;
   color: var(--fg); border: none; cursor: pointer;
