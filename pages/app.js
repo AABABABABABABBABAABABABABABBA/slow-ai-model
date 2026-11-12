@@ -737,9 +737,31 @@ document.querySelectorAll('[data-act]').forEach(el => {
   el.addEventListener('click', () => {
     const act = el.getAttribute('data-act');
     if (act === 'new_chat') newChat();
-    if (act === 'search') toast({ title: 'Search is local — filter the sidebar directly.' }, 2500);
+    if (act === 'search') focusChatSearch();
   });
 });
+
+// Reveal + focus the sidebar's own search input. On mobile the sidebar
+// may be collapsed, so open it first. Previously this button just
+// toasted "search is local" — useless UX; the real input was already
+// there, we just weren't jumping to it.
+function focusChatSearch() {
+  const sb = document.getElementById('sidebar');
+  if (sb && !sb.classList.contains('open') && window.matchMedia('(max-width: 840px)').matches) {
+    sb.classList.add('open');
+    const sc = document.getElementById('scrim');
+    if (sc) sc.classList.add('show');
+  }
+  // The search input may not exist yet if the chat list hasn't rendered.
+  // Ensure it's in the DOM, then focus + select.
+  if (!document.getElementById('sb_search')) renderChatList();
+  const inp = document.getElementById('sb_search');
+  if (inp) {
+    inp.focus({ preventScroll: false });
+    try { inp.select(); } catch {}
+    inp.scrollIntoView({ block: 'nearest' });
+  }
+}
 
 function closeSidebar() { sidebar.classList.remove('open'); scrim.classList.remove('show'); }
 hamburger.addEventListener('click', () => { sidebar.classList.add('open'); scrim.classList.add('show'); });
