@@ -188,6 +188,10 @@ export function userCanUseChatModel(user, model) {
   if (user.plan === 'plus') return true;
   return FREE_CHAT_MODELS.has(model || 'fast');
 }
-export function userCanUseCode(user) { return !!user && user.plan === 'plus'; }
-export function userCanUseImage(user) { return !!user && user.plan === 'plus'; }
-export function userCanUseVision(user) { return !!user && user.plan === 'plus'; }
+// Paid-tier gates. Both 'plus' and 'unlimited' get code/image/vision.
+// The 'unlimited' plan was being rejected by image/code/vision because
+// these checks only matched 'plus' — bug surfaced when the founder
+// (unlimited) tried to generate images.
+export function userCanUseCode(user)   { return !!user && (user.plan === 'plus' || user.plan === 'unlimited'); }
+export function userCanUseImage(user)  { return !!user && (user.plan === 'plus' || user.plan === 'unlimited'); }
+export function userCanUseVision(user) { return !!user && (user.plan === 'plus' || user.plan === 'unlimited'); }
