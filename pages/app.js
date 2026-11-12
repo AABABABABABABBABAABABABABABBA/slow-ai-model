@@ -2713,3 +2713,85 @@ async function openCaptchaModal() {
 
 // Prewarm the site key so the first captcha pops instantly.
 fetchSiteKey().catch(() => {});
+
+// ---------- Ad slots (free-tier only) ----------
+// Reads /api/config for the list of ad providers the owner has configured
+// and injects the first one into a given container. Only runs for free
+// users — paid Plus / unlimited see no ads.
+
+let _adProviders = null;
+async function fetchAdProviders() {
+  if (_adProviders) return _adProviders;
+  try {
+    const r = await apiFetch('/config', { method: 'GET' });
+    const j = await r.json();
+    _adProviders = Array.isArray(j.ad_providers) ? j.ad_providers : [];
+  } catch { _adProviders = []; }
+  return _adProviders;
+}
+
+async function mountAdSlot(container, slotId) {
+  if (!container) return;
+  if (state.plan !== 'free') return;         // only free sees ads
+  const providers = await fetchAdProviders();
+  if (!providers.length) return;
+  const p = providers[0];                     // simple: use the first active
+  try {
+    container.innerHTML = buildAdHtml(p, slotId);
+    // Scripts injected via innerHTML don't execute; replay them so each
+    // <script> tag runs in order.
+    container.querySelectorAll('script').forEach(old => {
+      const s = document.createElement('script');
+      for (const a of old.attributes) s.setAttribute(a.name, a.value);
+      if (old.textContent) s.textContent = old.textContent;
+      old.replaceWith(s);
+    });
+    container.style.display = '';
+  } catch (e) {
+    container.style.display = 'none';
+  }
+}
+
+function buildAdHtml(p, slotId) {
+  // Mirror of ad-providers.js slotHtml, but on the client side we only
+  // need enough per-provider knowledge to emit the embed. Keep it in
+  // lock-step with the server registry.
+  switch (p.id) {
+    case 'adsense': {
+      const client = p.primary;
+      return `<ins class="adsbygoogle" style="display:block;width:100%" data-ad-client="${client}" data-ad-slot="${slotId || ''}" data-ad-format="auto" data-full-width-responsive="true"></ins>
+        <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${client}" crossorigin="anonymous"></script>
+        <script>(adsbygoogle=window.adsbygoogle||[]).push({});</script>`;
+    }
+    case 'medianet':
+      return `<script src="//contextual.media.net/dmedianet.js?cid=${p.primary}" async defer></script><div id="_mn_slot_${slotId || 'main'}"></div>`;
+    case 'adsterra':
+      // User pastes the full script URL Adsterra gave them.
+      return `<script src="${p.primary}" async defer></script>`;
+    case 'propellerads':
+      return `<script src="https://inklinkor.com/tag.min.js" data-zone="${p.primary}" async data-cfasync="false"></script>`;
+    case 'infolinks':
+      return `<script>var infolinks_pid=${Number(p.primary)};var infolinks_wsid=${Number(p.extra)};</script><script src="//resources.infolinks.com/js/infolinks_main.js" async></script>`;
+    case 'a_ads':
+      return `<iframe data-aa="${p.primary}" src="//ad.a-ads.com/${p.primary}?size=320x50" style="width:320px;height:50px;max-width:100%;border:0;background:transparent" referrerpolicy="no-referrer"></iframe>`;
+    case 'popads':
+      return `<script type="text/javascript" data-cfasync="false">var _pop=_pop||[];_pop.push(["siteId",${Number(p.primary)}]);</script><script type="text/javascript" src="//c1.popads.net/pop.js" async></script>`;
+    case 'coinzilla':
+      return `<script async src="https://coinzillatag.com/lib/display.js"></script><div class="coinzilla" data-zone="${p.primary}"></div>`;
+    default:
+      return '';
+  }
+}
+
+// Insert an ad slot in the sidebar bottom for free users. The container is
+// only in the HTML, so if the current plan isn't free, nothing renders.
+(function installSidebarAd() {
+  const sb = document.getElementById('sb_owner');
+  if (!sb || !sb.parentElement) return;
+  const slot = document.createElement('div');
+  slot.id = 'sidebar_ad_slot';
+  slot.style.cssText = 'padding:10px 8px;margin:6px 8px 0;border-top:1px solid var(--border);min-height:0;display:none';
+  sb.parentElement.insertBefore(slot, sb);
+  // Deferred — we wait for state.plan to be set after the fetchMe call in init.
+  setTimeout(() => mountAdSlot(slot, 'sidebar'), 2000);
+})();
