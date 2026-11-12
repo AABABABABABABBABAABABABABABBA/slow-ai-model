@@ -1044,6 +1044,7 @@ async function runChatTurn(userText, attachments, opts) {
         chad_mode: state.settings.chadMode,
         temperature: state.settings.temperature,
         fingerprint: collectClientFingerprint(),
+        captcha_receipt: getCaptchaReceipt(),
       }),
       signal: currentAbort.signal,
     });
@@ -1061,7 +1062,12 @@ async function runChatTurn(userText, attachments, opts) {
     }
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
-      if (res.status === 429 && j?.error === 'usage_limit_reached') {
+      if (res.status === 428 && j?.error === 'captcha_required') {
+        // Server says we need a fresh captcha receipt. Pop the modal; the
+        // user solves it, we store the receipt, they hit send again.
+        openCaptchaModal();
+        errText = 'Solve the captcha to continue.';
+      } else if (res.status === 429 && j?.error === 'usage_limit_reached') {
         openUsageLimitModal(j);
         errText = `${j.tier} ${j.scope} limit reached (${j.used}/${j.limit}). Resets ${new Date(j.resets_at).toLocaleString()}.`;
       } else {
@@ -2605,3 +2611,105 @@ function showInstallChip() {
   });
   document.body.appendChild(hint);
 })();
+
+// ---------- Captcha (hCaptcha) ----------
+// Free + unlimited-grant users must solve a captcha every 10 minutes before
+// the chat endpoint accepts their requests. The receipt is a short-lived
+// signed token the server issues once hCaptcha verifies the solution.
+
+const CAPTCHA_STORAGE_KEY = 'chadgpt_captcha';
+let _captchaSiteKey = null;
+let _hcaptchaLoaded = null;
+
+function getCaptchaReceipt() {
+  try {
+    const raw = sessionStorage.getItem(CAPTCHA_STORAGE_KEY);
+    if (!raw) return null;
+    const { receipt, expires_at } = JSON.parse(raw);
+    if (!receipt || !expires_at) return null;
+    if (expires_at < Date.now() + 10_000) return null;   // expires soon
+    return receipt;
+  } catch { return null; }
+}
+
+function saveCaptchaReceipt(receipt, expires_at) {
+  try { sessionStorage.setItem(CAPTCHA_STORAGE_KEY, JSON.stringify({ receipt, expires_at })); } catch {}
+}
+
+async function fetchSiteKey() {
+  if (_captchaSiteKey) return _captchaSiteKey;
+  try {
+    const r = await apiFetch('/config', { method: 'GET' });
+    const j = await r.json();
+    _captchaSiteKey = j.hcaptcha_sitekey;
+    return _captchaSiteKey;
+  } catch { return null; }
+}
+
+function loadHCaptchaScript() {
+  if (_hcaptchaLoaded) return _hcaptchaLoaded;
+  _hcaptchaLoaded = new Promise((resolve, reject) => {
+    if (window.hcaptcha) return resolve(window.hcaptcha);
+    const s = document.createElement('script');
+    s.src = 'https://hcaptcha.com/1/api.js?render=explicit&onload=chadgptHcaptchaReady';
+    s.async = true; s.defer = true;
+    window.chadgptHcaptchaReady = () => resolve(window.hcaptcha);
+    s.onerror = () => reject(new Error('hcaptcha script failed to load'));
+    document.head.appendChild(s);
+  });
+  return _hcaptchaLoaded;
+}
+
+async function openCaptchaModal() {
+  const sitekey = await fetchSiteKey();
+  if (!sitekey) {
+    toast({ title: 'Captcha config missing — contact the founder' }, 4000, 'err');
+    return;
+  }
+  openModal('One quick check', (p) => {
+    p.innerHTML = `
+      <div style="padding:8px 0">
+        <div style="font-size:14px;line-height:1.5;margin-bottom:12px">
+          Free and granted-unlimited accounts solve a quick captcha every 10 minutes.
+          Each solve pays the AI model costs via <a href="https://hcaptcha.com/publisher" target="_blank" style="color:var(--accent)">hCaptcha Publisher</a>
+          so neither you nor the owner pays out of pocket.
+        </div>
+        <div id="hcap_box" style="display:flex;justify-content:center;min-height:85px;align-items:center">
+          <div style="color:var(--muted);font-size:12px">Loading captcha…</div>
+        </div>
+        <div id="hcap_err" style="color:var(--danger);font-size:12px;margin-top:8px;min-height:16px"></div>
+      </div>
+    `;
+    (async () => {
+      try {
+        const h = await loadHCaptchaScript();
+        const container = p.querySelector('#hcap_box');
+        container.innerHTML = '';
+        const widgetId = h.render(container, {
+          sitekey,
+          theme: 'dark',
+          callback: async (token) => {
+            const verifyRes = await apiFetch('/captcha/verify', {
+              method: 'POST', body: JSON.stringify({ token }),
+            });
+            const vj = await verifyRes.json().catch(() => ({}));
+            if (!verifyRes.ok || !vj.ok) {
+              p.querySelector('#hcap_err').textContent = 'Verify failed: ' + (vj.error || verifyRes.status);
+              return;
+            }
+            saveCaptchaReceipt(vj.receipt, vj.expires_at);
+            closeModal();
+            toast({ title: 'Verified — good for 10 min' }, 2500, 'ok');
+          },
+          'error-callback': () => { p.querySelector('#hcap_err').textContent = 'hCaptcha widget error. Try again.'; },
+          'expired-callback': () => { try { h.reset(widgetId); } catch {} },
+        });
+      } catch (err) {
+        p.querySelector('#hcap_err').textContent = 'Could not load hCaptcha: ' + (err.message || err);
+      }
+    })();
+  });
+}
+
+// Prewarm the site key so the first captcha pops instantly.
+fetchSiteKey().catch(() => {});

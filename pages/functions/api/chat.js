@@ -4,6 +4,7 @@ import { route as moeRoute } from '../_lib/router.js';
 import { MODEL_CATALOG, tierForModel, planAllowsTier, planSkipsQuota } from '../_lib/tiers.js';
 import { canUse, recordUsage } from '../_lib/usage.js';
 import { recordFingerprint } from '../_lib/fingerprint.js';
+import { verifyCaptchaReceipt, captchaRequiredFor } from '../_lib/captcha.js';
 
 // Server-side jailbreak gate — client can't disable this by editing JS.
 const JAILBREAK_PATTERNS = [
@@ -39,6 +40,22 @@ export async function onRequestPost({ request, env }) {
 
   let body;
   try { body = await request.json(); } catch { return json({ error: 'invalid JSON' }, { status: 400 }); }
+
+  // Captcha gate — everyone except paid Plus must submit a fresh captcha
+  // receipt. Free + unlimited-grant users all go through it so the founder's
+  // Workers AI cost is offset by hCaptcha Publisher revenue. Receipts live
+  // 10 minutes so users don't solve one per message — the frontend shows a
+  // captcha when there's no receipt or it has expired.
+  if (captchaRequiredFor(user.plan)) {
+    const check = await verifyCaptchaReceipt(env, user.id, body.captcha_receipt);
+    if (!check.ok) {
+      return json({
+        error: 'captcha_required',
+        reason: check.reason,
+        detail: 'Solve the captcha to continue. Free and granted-unlimited users must solve one every 10 minutes so the model costs are offset.',
+      }, { status: 428 });   // "Precondition Required"
+    }
+  }
 
   // Server-side jailbreak enforcement — scan all user messages, not just last
   if (Array.isArray(body.messages)) {
