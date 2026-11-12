@@ -1,6 +1,27 @@
 // ChadGPT frontend. Static site hosted on Cloudflare Pages.
 // Calls three Workers for AI (chat, code, image). Session-token protected.
 
+// Global error banner — if any uncaught error hits the page, paint a visible
+// red bar so the user doesn't get a dead-feeling UI with no explanation.
+(function installGlobalErrorBanner() {
+  function show(label, msg) {
+    try {
+      let bar = document.getElementById('chadgpt_err_banner');
+      if (!bar) {
+        bar = document.createElement('div');
+        bar.id = 'chadgpt_err_banner';
+        bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#b23c3c;color:#fff;padding:10px 14px;font:13px/1.4 system-ui,sans-serif;display:flex;gap:10px;align-items:flex-start;box-shadow:0 2px 12px rgba(0,0,0,.3)';
+        bar.innerHTML = '<div style="flex:1"><b id="chadgpt_err_label"></b><div id="chadgpt_err_msg" style="opacity:.9;font-size:12px;margin-top:2px;font-family:ui-monospace,monospace;word-break:break-word"></div></div><button style="background:transparent;border:1px solid #fff;color:#fff;border-radius:6px;padding:3px 10px;cursor:pointer;font-size:12px" onclick="this.parentElement.remove()">dismiss</button>';
+        (document.body || document.documentElement).appendChild(bar);
+      }
+      bar.querySelector('#chadgpt_err_label').textContent = label;
+      bar.querySelector('#chadgpt_err_msg').textContent = msg;
+    } catch {}
+  }
+  window.addEventListener('error', (e) => { show('App error', (e.error?.stack || e.message || 'unknown').slice(0, 400)); });
+  window.addEventListener('unhandledrejection', (e) => { show('Promise rejection', ((e.reason?.stack || e.reason?.message || e.reason) + '').slice(0, 400)); });
+})();
+
 const CFG = window.CHADGPT_CONFIG;
 
 // ---------- marked (markdown) -----------
@@ -368,12 +389,24 @@ function fmtUptime(ms) {
 async function fetchContainer() {
   try {
     const r = await apiFetch('/container', { method: 'GET' });
-    if (!r.ok) return null;
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      console.warn('container fetch failed', r.status, j);
+      // Don't toast 401s — the auth gate handles those. Everything else is loud.
+      if (r.status !== 401) {
+        toast({ title: `Container unavailable: ${j.error || r.status}`, sub: j.detail || '' }, 5000, 'err');
+      }
+      return null;
+    }
     const j = await r.json();
     containerState = j.container;
     containerStartedAt = containerState.created_at;
     return containerState;
-  } catch { return null; }
+  } catch (e) {
+    console.error('container fetch threw', e);
+    toast({ title: 'Container fetch failed', sub: e.message || String(e) }, 5000, 'err');
+    return null;
+  }
 }
 
 async function stopContainer() {
