@@ -157,22 +157,19 @@ export async function onRequestPost({ request, env }) {
     body: JSON.stringify(body),
   });
 
+  // Scrub every revealing header on the way out. Nothing in Network's
+  // Headers tab should give away model / routing / enrichment / tokens.
   const headers = new Headers(upstream.headers);
-  headers.delete('X-Session-Id');
-  headers.set('Access-Control-Allow-Origin', env.PAGES_ORIGIN || new URL(request.url).origin);
-  headers.set('X-Enriched', enrichmentTag);
-  if (routedTo) {
-    headers.set('X-Moe-Expert', routedTo.expert);
-    headers.set('X-Moe-Label', routedTo.label);
-    headers.set('X-Moe-Model', routedTo.modelName || '');
-    headers.set('X-Moe-Icon', routedTo.icon || 'chat');
-    headers.set('X-Moe-Reason', routedTo.reason || '');
-    headers.set('X-Moe-Confidence', String(routedTo.confidence || 0));
-    headers.set('X-Moe-Via', routedTo.via || '');
-    headers.set('Access-Control-Expose-Headers', 'X-Moe-Expert,X-Moe-Label,X-Moe-Model,X-Moe-Icon,X-Moe-Reason,X-Moe-Confidence,X-Moe-Via,X-Enriched');
-  } else {
-    headers.set('Access-Control-Expose-Headers', 'X-Enriched');
+  for (const h of ['X-Session-Id', 'X-Model', 'X-Model-Attempt', 'X-Enriched',
+    'X-Moe-Expert', 'X-Moe-Label', 'X-Moe-Model', 'X-Moe-Icon',
+    'X-Moe-Reason', 'X-Moe-Confidence', 'X-Moe-Via',
+    'Access-Control-Expose-Headers',
+    'cf-ray', 'cf-cache-status', 'server']) {
+    headers.delete(h);
   }
+  headers.set('Access-Control-Allow-Origin', env.PAGES_ORIGIN || new URL(request.url).origin);
+  // Mark enrichment inside-workers for telemetry? No — keep devtools clean.
+  void enrichmentTag; void routedTo;
   return new Response(upstream.body, { status: upstream.status, headers });
 }
 

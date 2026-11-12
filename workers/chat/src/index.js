@@ -254,13 +254,12 @@ async function handleChat(request, env, cors) {
             'Content-Type': 'text/event-stream',
             'Cache-Control': 'no-cache',
             'X-Session-Id': session.sessionId,
-            // Never leak the actual model id in headers — spoof it as chadgpt.
-            'X-Model': 'chadgpt',
-            'X-Model-Attempt': a.label,
+            // Deliberately no X-Model, no X-Model-Attempt, no usage — the
+            // Network tab sees a clean stream of {response} chunks only.
           }, cors),
         });
       }
-      return json({ response: scrubText(result.response || ''), model: 'chadgpt', attempt: a.label, session_id: session.sessionId }, 200, cors);
+      return json({ response: scrubText(result.response || '') }, 200, cors);
     } catch (err) {
       lastErr = err;
       // 2xx/non-retriable errors bail immediately; transient (5xx, rate, timeout) loop.
@@ -403,33 +402,40 @@ function scrubStream(upstream) {
       for (const line of parts) {
         const l = line.trim();
         if (!l) { controller.enqueue(encoder.encode('\n')); continue; }
-        if (!l.startsWith('data:')) { controller.enqueue(encoder.encode(line + '\n')); continue; }
+        if (!l.startsWith('data:')) {
+          // Non-data SSE lines (event:, id:, retry:) are dropped so the
+          // Network tab's EventStream only ever shows clean response chunks.
+          continue;
+        }
         const payload = l.slice(5).trim();
-        if (payload === '[DONE]') { controller.enqueue(encoder.encode(line + '\n')); continue; }
+        if (payload === '[DONE]') { controller.enqueue(encoder.encode('data: [DONE]\n\n')); continue; }
         try {
           const obj = JSON.parse(payload);
-          if (typeof obj.response === 'string') {
-            const scrubbed = scrubText(obj.response);
-            acc += obj.response;
-            // Leak check on accumulated buffer; replace whole stream if hit.
-            if (LEAK_PATTERNS.some(re => re.test(acc))) {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ response: '\n\n' + LEAK_REFUSAL })}\n\n`));
-              controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-              leakedAborted = true;
-              try { controller.terminate(); } catch {}
-              return;
-            }
-            obj.response = scrubbed;
+          // Only emit chunks that carry visible response text. Drop usage,
+          // model, prompt_tokens, completion_tokens, finish_reason, done, and
+          // any other upstream metadata so devtools can't learn anything
+          // about which model answered, how many tokens were used, etc.
+          if (typeof obj.response !== 'string') continue;
+          const scrubbed = scrubText(obj.response);
+          acc += obj.response;
+          // Leak check on accumulated buffer; replace whole stream if hit.
+          if (LEAK_PATTERNS.some(re => re.test(acc))) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ response: '\n\n' + LEAK_REFUSAL })}\n\n`));
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+            leakedAborted = true;
+            try { controller.terminate(); } catch {}
+            return;
           }
-          controller.enqueue(encoder.encode('data: ' + JSON.stringify(obj) + '\n'));
+          // Emit ONLY the response field — nothing else, ever.
+          controller.enqueue(encoder.encode('data: ' + JSON.stringify({ response: scrubbed }) + '\n\n'));
         } catch {
-          // Pass malformed lines through unchanged.
-          controller.enqueue(encoder.encode(line + '\n'));
+          // Silently drop malformed chunks — don't leak upstream noise.
         }
       }
     },
     flush(controller) {
-      if (buf) controller.enqueue(encoder.encode(buf));
+      // Discard leftover buf — if it didn't complete a chunk, dropping it
+      // can only hide metadata, never user-visible text.
     },
   });
 
