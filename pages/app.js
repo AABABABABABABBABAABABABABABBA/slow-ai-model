@@ -2278,36 +2278,26 @@ function openChatMenu(anchor, chat) {
 const modalRoot = document.createElement('div');
 modalRoot.style.display = 'contents';
 document.body.appendChild(modalRoot);
-// Token the deferred close-cleanup checks before wiping modalRoot. If a new
-// openModal runs within the 200ms fade-out window, we bump the token so the
-// stale cleanup from the OLD close becomes a no-op and the new modal isn't
-// accidentally destroyed. Without this, clicking "Founder admin" from inside
-// the usage modal opened the panel then immediately nuked it 200ms later.
-let modalCloseToken = 0;
+// Modals wipe/replace synchronously. Earlier we deferred cleanup by 200ms
+// for a fade-out animation, but that caused closeModal's late setTimeout to
+// nuke a freshly-opened modal (e.g. "Founder admin" opening from inside the
+// usage modal). Snap-close is uglier by one frame, but bulletproof.
 function openModal(title, render) {
-  modalCloseToken++;              // invalidates any pending fade-out cleanup
   modalRoot.innerHTML = '';
   const s = document.createElement('div');
-  s.className = 'scrim';
+  s.className = 'scrim show';     // show immediately — no fade-in race
   s.innerHTML = `<div class="modal"><div class="modal_head"><h3></h3><button class="modal_close" aria-label="close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/></svg></button></div><div class="modal_body"></div></div>`;
   s.querySelector('h3').textContent = title;
   s.querySelector('.modal_close').addEventListener('click', closeModal);
-  s.addEventListener('click', (e) => { if (e.target === s) closeModal(); });
+  // Only close on clicks that LAND on the scrim itself, not on anything
+  // inside the modal. Using mousedown avoids the quirk where a click
+  // starting inside the modal and ending on the scrim would close it.
+  s.addEventListener('mousedown', (e) => { if (e.target === s) closeModal(); });
   render(s.querySelector('.modal_body'));
   modalRoot.appendChild(s);
-  requestAnimationFrame(() => s.classList.add('show'));
 }
 function closeModal() {
-  const s = modalRoot.querySelector('.scrim');
-  if (!s) return;
-  s.classList.remove('show');
-  const myToken = ++modalCloseToken;
-  setTimeout(() => {
-    // If another openModal ran in the meantime it bumped the token past
-    // ours; bail so we don't wipe the new modal.
-    if (myToken !== modalCloseToken) return;
-    modalRoot.innerHTML = '';
-  }, 200);
+  modalRoot.innerHTML = '';
 }
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
 
