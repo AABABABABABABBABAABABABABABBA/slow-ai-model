@@ -251,6 +251,30 @@ LOGO
     ' packages/tui/src/feature-plugins/sidebar/footer.tsx
     echo "   -> removed /connect sidebar link"
   fi
+
+  # User-visible "opencode" command strings that didn't get caught by
+  # the earlier case-sensitive sed sweep. Narrow, path-anchored edits
+  # so we don't mangle package names or comments.
+  if [[ -f packages/tui/src/util/presentation.ts ]]; then
+    sed -i \
+      -e 's/`Run `${reset}${bold}opencode${reset}/`Run `${reset}${bold}chadcode${reset}/' \
+      -e 's/`opencode -s /`chadcode -s /' \
+      packages/tui/src/util/presentation.ts
+    echo "   -> presentation.ts: Continue/Run commands → chadcode"
+  fi
+  if [[ -f packages/tui/src/util/error.ts ]]; then
+    sed -i \
+      -e 's/Try: `opencode models`/Try: `chadcode models`/' \
+      -e 's/(opencode.json)/(opencode.jsonc)/' \
+      packages/tui/src/util/error.ts
+    echo "   -> error.ts: model-not-found hint → chadcode models"
+  fi
+  if [[ -f packages/tui/src/component/dialog-pair.tsx ]]; then
+    sed -i \
+      -e 's/Run `opencode service set/Run `chadcode service set/' \
+      packages/tui/src/component/dialog-pair.tsx
+    echo "   -> dialog-pair.tsx: service-set hint → chadcode"
+  fi
 fi
 
 PROMPT_SRC_DIR="$(cd "$(dirname "$0")/.." && pwd)/prompts"
