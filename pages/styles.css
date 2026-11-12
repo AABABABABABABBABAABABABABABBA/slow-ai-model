@@ -15,7 +15,7 @@
   --cf_orange: #f6821f;
   --divider: #e3e3e3;
   --code_bg: #f3f3f3;
-  --sans: ui-sans-serif, -apple-system, system-ui, "Segoe UI", Helvetica, Arial, sans-serif;
+  --sans: "Geist", ui-sans-serif, -apple-system, system-ui, "Segoe UI", Helvetica, Arial, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   color-scheme: light;
 }
@@ -363,9 +363,13 @@ main {
 .msg_row { display: flex; gap: 16px; min-width: 0; width: 100%; }
 .msg_row.user { justify-content: flex-end; }
 .msg_row.user .bubble {
-  background: var(--user_bubble); padding: 10px 18px; border-radius: 24px;
+  background: linear-gradient(135deg, var(--user_bubble), color-mix(in srgb, var(--user_bubble) 85%, var(--accent) 6%));
+  padding: 12px 18px; border-radius: 22px 22px 6px 22px;
   max-width: 85%; white-space: pre-wrap; word-wrap: break-word;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+  transition: transform 0.15s ease;
 }
+.msg_row.user:hover .bubble { transform: translateY(-1px); }
 .msg_row.bot { flex-direction: column; align-items: stretch; gap: 0; }
 .msg_row.bot .bot_body {
   flex: 1 1 0; min-width: 0; max-width: 100%; width: 100%;
@@ -516,7 +520,21 @@ footer {
   padding-right: calc(16px + env(safe-area-inset-right, 0px));
 }
 .composer_wrap { max-width: 768px; margin: 0 auto; }
-.composer { background: var(--user_bubble); border-radius: 28px; padding: 10px 10px 8px; display: flex; flex-direction: column; gap: 2px; }
+.composer {
+  background: var(--user_bubble);
+  border-radius: 28px;
+  padding: 10px 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid transparent;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.composer:focus-within {
+  border-color: color-mix(in srgb, var(--fg) 25%, transparent);
+  box-shadow: 0 6px 24px rgba(0,0,0,0.12), 0 0 0 4px color-mix(in srgb, var(--fg) 6%, transparent);
+}
 .composer textarea {
   background: transparent; color: var(--fg); border: none; outline: none; resize: none;
   font-family: inherit; font-size: 16px; line-height: 1.5; padding: 6px 10px 2px;
@@ -529,13 +547,19 @@ footer {
   width: 36px; height: 36px; border-radius: 50%; background: transparent; color: var(--fg);
   border: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
 }
-.ca_btn:hover { background: rgba(127,127,127,0.15); }
+.ca_btn { transition: background 0.14s ease, transform 0.14s ease; }
+.ca_btn:hover { background: rgba(127,127,127,0.15); transform: translateY(-1px); }
+.ca_btn:active { transform: translateY(0); background: rgba(127,127,127,0.22); }
 .ca_btn svg { width: 20px; height: 20px; }
 .send_btn {
   width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: var(--accent_fg);
   border: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+  transition: transform 0.14s ease, box-shadow 0.14s ease, opacity 0.14s ease;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.12);
 }
-.send_btn:disabled { background: color-mix(in srgb, var(--muted) 50%, transparent); color: var(--bg); cursor: not-allowed; }
+.send_btn:hover:not(:disabled) { transform: translateY(-1px) scale(1.05); box-shadow: 0 4px 12px rgba(0,0,0,0.18); }
+.send_btn:active:not(:disabled) { transform: translateY(0) scale(1); box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+.send_btn:disabled { background: color-mix(in srgb, var(--muted) 50%, transparent); color: var(--bg); cursor: not-allowed; box-shadow: none; }
 .send_btn.stop { background: var(--fg); }
 .send_btn svg { width: 18px; height: 18px; }
 .footnote { text-align: center; color: var(--muted); font-size: 12px; margin-top: 6px; }
@@ -999,3 +1023,121 @@ body.authed-off > aside, body.authed-off > .chat, body.authed-off > .sidebar_scr
 .ios_chev { width: 10px; height: 10px; color: rgba(235, 235, 245, 0.45); flex-shrink: 0; }
 
 .ios_row_static { cursor: default; }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Polish layer. Everything below here is additive — zero changes to
+   existing selectors' intent, just finish/detail work:
+     - thin themed scrollbars (Chromium + Firefox)
+     - prettier text selection
+     - link color that doesn't clash with dark theme
+     - sidebar active/hover polish
+     - message action buttons with soft hover
+     - smooth focus rings on interactive controls
+     - subtle entrance animation on new messages
+   ────────────────────────────────────────────────────────────────────── */
+
+/* Scrollbars — thin, dark, themed. Only for Blink/WebKit; Firefox uses
+   scrollbar-width/color below. */
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted) 35%, transparent);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--muted) 55%, transparent); background-clip: padding-box; }
+* { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--muted) 40%, transparent) transparent; }
+
+/* Selection color matches the brand without blinding you. */
+::selection {
+  background: color-mix(in srgb, #8a4fd1 45%, transparent);
+  color: inherit;
+}
+
+/* Prettier links inside bot messages — no underline until hover, subtle
+   accent color that reads on dark + light. */
+.bot_body a {
+  color: color-mix(in srgb, #8a4fd1 90%, var(--fg) 10%);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, #8a4fd1 30%, transparent);
+  transition: border-color 0.14s ease, color 0.14s ease;
+}
+.bot_body a:hover {
+  color: #b58cff;
+  border-bottom-color: #b58cff;
+}
+
+/* Sidebar chat items — tighter, gentler hover, cleaner active bar. */
+.sb_chat_item {
+  transition: background 0.14s ease, color 0.14s ease;
+  position: relative;
+}
+.sb_chat_item:hover { background: var(--sidebar_hover); }
+.sb_chat_item.active {
+  background: color-mix(in srgb, var(--sidebar_hover) 85%, var(--accent) 6%);
+}
+.sb_chat_item.active::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 8px; bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: color-mix(in srgb, var(--fg) 70%, transparent);
+}
+
+/* Sidebar icon buttons get the same subtle hover-lift as composer buttons. */
+.sb_icon_btn { transition: background 0.14s ease, transform 0.14s ease; }
+.sb_icon_btn:hover { background: var(--sidebar_hover); transform: translateY(-1px); }
+.sb_icon_btn:active { transform: translateY(0); }
+
+/* Message action buttons (regen / copy / edit) — smoother reveal + hover. */
+.edit_user, .msg_actions {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.msg_actions > * {
+  transition: background 0.14s ease, color 0.14s ease, transform 0.14s ease;
+}
+.msg_actions > *:hover { background: var(--sidebar_hover); transform: translateY(-1px); }
+
+/* Code block polish — cleaner shadow, nicer top-bar divider. */
+.code_block_wrap { box-shadow: 0 1px 2px rgba(0,0,0,0.06); border-radius: 10px; overflow: hidden; }
+.code_block_bar { border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent); }
+
+/* Focus rings — accessible, consistent, not browser blue. */
+button:focus-visible,
+textarea:focus-visible,
+input:focus-visible,
+a:focus-visible,
+.chip:focus-visible,
+.sb_chat_item:focus-visible {
+  outline: 2px solid color-mix(in srgb, #8a4fd1 60%, transparent);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* New-message entrance animation. Keeps the stream feeling alive without
+   being distracting — one 180ms fade+rise per row at insertion time. */
+@keyframes msg_enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.msg_row { animation: msg_enter 0.18s ease-out both; }
+
+/* Welcome heading — slightly larger + tighter tracking so it feels like
+   a hero instead of a label. */
+.welcome h1 {
+  font-size: clamp(28px, 4vw, 40px);
+  letter-spacing: -0.025em;
+  font-weight: 600;
+  margin: 0 0 10px;
+}
+.welcome_sub { font-size: 15px; }
+
+/* Chips — more tactile. */
+.chip {
+  transition: background 0.14s ease, border-color 0.14s ease, transform 0.14s ease;
+}
+.chip:hover { transform: translateY(-1px); }
+.chip:active { transform: translateY(0); }
+
