@@ -1185,27 +1185,43 @@ async function runChatTurn(userText, attachments, opts) {
     .map(h => ({ role: h.role === 'assistant' ? 'assistant' : 'user', content: (h.role === 'user' ? (h === history[history.length - 1] ? finalUserText : h.content) : h.content) }))
     .filter(h => h.content);
 
-  // Free-plan queue. Pings /api/queue/ticket first — server returns the
-  // user's position in the free queue and holds the connection open for the
-  // waited duration. Plus / unlimited skip this entirely (server short-
-  // circuits). Shows a live "You're #N in queue" status on the bot bubble.
+  // Shared lane (free plan only). Free users all run on ONE server — if
+  // someone else is generating, we wait our turn. Pings /api/queue/ticket
+  // which blocks server-side until the lane is ours, then returns. Paid
+  // plans skip this (server short-circuits). On 429 the lane was still
+  // busy after the max wait — surface a "someone else is cooking" bubble
+  // with a retry button instead of sending into a definite failure.
   let queueStatus = null;
   if (state.plan === 'free') {
     queueStatus = document.createElement('div');
     queueStatus.className = 'queue_status';
     queueStatus.style.cssText = 'font-size:13px;color:var(--muted);font-style:italic;display:flex;align-items:center;gap:8px';
-    queueStatus.innerHTML = '<span class="queue_spin" style="width:12px;height:12px;border-radius:50%;border:2px solid rgba(255,255,255,0.15);border-top-color:var(--accent);animation:spin 0.9s linear infinite;display:inline-block"></span><span>Joining queue…</span>';
+    queueStatus.innerHTML = '<span class="queue_spin" style="width:12px;height:12px;border-radius:50%;border:2px solid rgba(255,255,255,0.15);border-top-color:var(--accent);animation:spin 0.9s linear infinite;display:inline-block"></span><span>Checking the free server…</span>';
     body.innerHTML = '';
     body.appendChild(queueStatus);
     try {
       const qRes = await apiFetch('/queue/ticket', { method: 'POST', body: '{}', signal: currentAbort.signal });
       const qJson = await qRes.json().catch(() => ({}));
-      if (qJson.queued && qJson.position) {
-        queueStatus.querySelector('span:last-child').textContent = `You were #${qJson.position} in queue — now answering…`;
+      if (qRes.status === 429 || qJson.ok === false) {
+        // Lane still busy after max wait. Show a short message + Retry chip.
+        const retryS = Math.max(1, Math.ceil((qJson.retry_after_ms || 10000) / 1000));
+        body.innerHTML = `
+          <div style="padding:14px;border:1px solid var(--border);border-radius:10px;background:var(--bg);font-size:13px;line-height:1.55">
+            <div style="font-weight:600;color:var(--fg);margin-bottom:6px">Free server is busy</div>
+            <div style="color:var(--muted);margin-bottom:10px">Another free user is generating right now — the free tier runs on one shared server. Try again in ${retryS}s, or upgrade to Plus for your own container (no waiting).</div>
+            <div style="display:flex;gap:8px"><button class="chip" id="qretry_btn">Retry in ${retryS}s</button><button class="chip" id="qupgrade_btn" style="background:linear-gradient(135deg,#4e2a8e,#8a4fd1);color:#fff">Upgrade to Plus</button></div>
+          </div>`;
+        document.getElementById('qretry_btn').addEventListener('click', () => { runChatTurn(userText, attachments, opts); });
+        document.getElementById('qupgrade_btn').addEventListener('click', () => { if (typeof openPaywallModal === 'function') openPaywallModal('Skip the free queue'); });
+        busy = false; setSendMode('send'); return;
+      }
+      if (qJson.queued && qJson.wait_ms > 500) {
+        queueStatus.querySelector('span:last-child').textContent = `Waited ${(qJson.wait_ms / 1000).toFixed(1)}s — your turn now.`;
       }
     } catch (e) {
       if (e?.name === 'AbortError') { busy = false; setSendMode('send'); return; }
-      // Queue failure isn't fatal — proceed to chat.
+      // Queue failure isn't fatal — proceed to chat (the chat endpoint
+      // enforces the gate too).
     }
   }
 

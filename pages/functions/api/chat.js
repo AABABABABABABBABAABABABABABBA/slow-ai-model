@@ -5,6 +5,13 @@ import { MODEL_CATALOG, tierForModel, planAllowsTier, planSkipsQuota } from '../
 import { canUse, recordUsage } from '../_lib/usage.js';
 import { recordFingerprint } from '../_lib/fingerprint.js';
 import { verifyCaptchaReceipt, captchaRequiredFor } from '../_lib/captcha.js';
+import {
+  waitAndClaimSharedLane,
+  releaseSharedLane,
+  getSharedLaneStatus,
+  usesSharedLane,
+  SHARED_LANE_MAX_WAIT_MS,
+} from '../_lib/shared-lane.js';
 
 // Server-side jailbreak gate — client can't disable this by editing JS.
 const JAILBREAK_PATTERNS = [
@@ -137,15 +144,43 @@ export async function onRequestPost({ request, env }) {
     }, { status: 429, headers: { 'Retry-After': '5' } });
   }
 
+  // Shared lane (free tier only). Only ONE free request runs at a time
+  // across the whole app — if someone else is cooking, you wait. Paid
+  // users bypass this entirely; they get dedicated per-user capacity.
+  // The /api/queue/ticket endpoint may have already claimed this for us
+  // (that's the UX path with a visible "waiting" state), so claim is
+  // idempotent — if we already hold it we just extend the lease.
+  let sharedLaneHeld = false;
+  if (usesSharedLane(user.plan)) {
+    const claim = await waitAndClaimSharedLane(env, user.id, { maxWaitMs: SHARED_LANE_MAX_WAIT_MS });
+    if (!claim.ok) {
+      await concRelease();
+      const status = await getSharedLaneStatus(env);
+      const remain = Math.max(0, (status.until || Date.now()) - Date.now());
+      return json({
+        error: 'shared_lane_busy',
+        lane: 'shared',
+        detail: 'Free tier runs on one shared server. Someone else is generating — try again in a moment, or upgrade to Plus for your own container.',
+        retry_after_ms: Math.min(remain, 30_000),
+      }, { status: 429, headers: { 'Retry-After': String(Math.max(1, Math.ceil(remain / 1000))) } });
+    }
+    sharedLaneHeld = true;
+  }
+
   // Record device fingerprint. If this device is blocked for bypass attempts,
   // deny the request regardless of plan.
   const fpCheck = await recordFingerprint(env, user.id, request, body.fingerprint);
   if (fpCheck.blocked) {
     await concRelease();
+    if (sharedLaneHeld) await releaseSharedLane(env, user.id);
     return forbidden('device blocked for bypass attempts');
   }
 
-  if (!env.CHAT_URL) return json({ error: 'CHAT_URL not configured' }, { status: 500 });
+  if (!env.CHAT_URL) {
+    await concRelease();
+    if (sharedLaneHeld) await releaseSharedLane(env, user.id);
+    return json({ error: 'CHAT_URL not configured' }, { status: 500 });
+  }
 
   // ---- live data enrichment ----
   // Run all detectors against the last user message in parallel. Hits get
@@ -165,7 +200,11 @@ export async function onRequestPost({ request, env }) {
 
   // Pick which worker to call. MoE may route to the code worker.
   const targetUrl = routedTo?.worker === 'code' ? env.CODE_URL : env.CHAT_URL;
-  if (!targetUrl) return json({ error: `${routedTo?.worker || 'chat'}_URL not configured` }, { status: 500 });
+  if (!targetUrl) {
+    await concRelease();
+    if (sharedLaneHeld) await releaseSharedLane(env, user.id);
+    return json({ error: `${routedTo?.worker || 'chat'}_URL not configured` }, { status: 500 });
+  }
 
   // Record BEFORE the upstream call. If upstream fails, we still count the
   // attempt — simpler and matches how Claude counts failed sends toward quota.
@@ -207,9 +246,10 @@ export async function onRequestPost({ request, env }) {
   // Mark enrichment inside-workers for telemetry? No — keep devtools clean.
   void enrichmentTag; void routedTo;
 
-  // Tee the upstream body so we can release the concurrency slot when the
-  // stream actually finishes (not just when the headers come back). If the
-  // client disconnects early the KV key's 60s TTL mops up anyway.
+  // Tee the upstream body so we can release the concurrency slot — and
+  // the shared free-tier lane, if we hold it — when the stream actually
+  // finishes (not just when the headers come back). If the client
+  // disconnects early the KV TTL on both keys mops up anyway.
   const [passthrough, watcher] = upstream.body.tee();
   (async () => {
     try {
@@ -217,6 +257,7 @@ export async function onRequestPost({ request, env }) {
       while (true) { const { done } = await r.read(); if (done) break; }
     } catch {}
     try { await concRelease(); } catch {}
+    if (sharedLaneHeld) { try { await releaseSharedLane(env, user.id); } catch {} }
   })();
 
   return new Response(passthrough, { status: upstream.status, headers });

@@ -1,60 +1,78 @@
 // POST /api/queue/ticket  (auth required)
 //
-// Free-plan users call this before sending a chat message. The endpoint
-// returns their current position in a server-side "free queue" counter
-// (atomic-ish, backed by SESSIONS KV) and holds the connection open for
-// the wait duration before responding with { ok: true }.
+// The free tier runs through ONE shared lane — only one free-user request
+// is served at a time across the whole app. This endpoint blocks until
+// that lane is yours, then returns { ok: true } so the client can open
+// /api/chat. Paid plans (plus / unlimited) skip the lane entirely and
+// return immediately.
 //
-// Plus / unlimited users skip the queue entirely (the client doesn't call
-// this endpoint for them). The queue is intentional product differentiation:
-// free tier always feels slightly slower than Plus, even at zero contention.
+// Behavior for a free user:
+//   - If the lane is free → claim it immediately, return ok: true.
+//   - If the lane is busy → poll until it frees (max 20s). Once we claim,
+//     return ok: true plus waited_ms so the client can show "waited X".
+//   - If the 20s budget blows → return 429 with queued=false and a hint
+//     how long the current holder is still expected to run. The client
+//     shows "Someone's generating, retry in X seconds" and the user can
+//     retry whenever they want.
+//
+// The lease the ticket takes is released by /api/chat when its stream
+// ends, OR by KV TTL if the serving Worker dies mid-stream.
 
 import { getAuthedUser, json, unauthorized } from '../../_lib/auth.js';
-import { planSkipsQuota } from '../../_lib/tiers.js';
-
-const KEY = 'q:free:inflight';
-const COUNT_TTL_SEC = 30;        // stale slots evaporate after 30s
-const BASE_WAIT_MS = 1500;       // every free user waits at least this long
-const PER_POSITION_MS = 800;     // each person ahead of you adds this
-const MAX_WAIT_MS = 15_000;      // hard ceiling so a bug can't hang forever
+import {
+  waitAndClaimSharedLane,
+  getSharedLaneStatus,
+  usesSharedLane,
+  SHARED_LANE_MAX_WAIT_MS,
+} from '../../_lib/shared-lane.js';
 
 export async function onRequestPost({ request, env }) {
   const user = await getAuthedUser(request, env);
   if (!user) return unauthorized();
 
-  // Plus / unlimited never wait.
-  if (user.plan === 'plus' || planSkipsQuota(user.plan)) {
-    return json({ ok: true, queued: false, position: 0, wait_ms: 0 });
+  // Paid plans never wait on the shared lane — each gets their own
+  // per-user concurrency slot inside /api/chat.
+  if (!usesSharedLane(user.plan)) {
+    return json({ ok: true, queued: false, position: 0, wait_ms: 0, lane: 'dedicated' });
   }
 
-  if (!env.SESSIONS) {
-    // No KV binding — degrade to the base wait so the UX still feels right.
-    await sleep(BASE_WAIT_MS);
-    return json({ ok: true, queued: true, position: 1, wait_ms: BASE_WAIT_MS, depth: 1 });
+  const result = await waitAndClaimSharedLane(env, user.id, { maxWaitMs: SHARED_LANE_MAX_WAIT_MS });
+  if (result.ok) {
+    return json({
+      ok: true,
+      queued: result.waited_ms > 500,
+      lane: 'shared',
+      wait_ms: result.waited_ms,
+      degraded: !!result.degraded,
+    });
   }
 
-  // Read-increment-write — not perfectly atomic, but close enough. Racey
-  // callers end up a slot or two off, which is fine for a product queue.
-  let depth = 0;
-  try { depth = Number((await env.SESSIONS.get(KEY)) || 0); } catch {}
-  const position = Math.min(depth + 1, 50);
-  try { await env.SESSIONS.put(KEY, String(depth + 1), { expirationTtl: COUNT_TTL_SEC }); } catch {}
-
-  const waitMs = Math.min(BASE_WAIT_MS + (position - 1) * PER_POSITION_MS, MAX_WAIT_MS);
-  await sleep(waitMs);
-
-  // Release our slot so the next person ahead advances. If the count is
-  // already stale (TTL fired) treat it as empty.
-  try {
-    const now = Number((await env.SESSIONS.get(KEY)) || 0);
-    const next = Math.max(0, now - 1);
-    if (next === 0) await env.SESSIONS.delete(KEY);
-    else await env.SESSIONS.put(KEY, String(next), { expirationTtl: COUNT_TTL_SEC });
-  } catch {}
-
-  return json({ ok: true, queued: true, position, wait_ms: waitMs, depth: depth + 1 });
+  // Lane still busy after the max wait. Tell the client how long the
+  // current holder is still expected to run so the UI can pick a sane
+  // retry delay.
+  const status = await getSharedLaneStatus(env);
+  const remain = Math.max(0, (status.until || Date.now()) - Date.now());
+  return json({
+    ok: false,
+    queued: true,
+    lane: 'shared',
+    wait_ms: result.waited_ms,
+    retry_after_ms: Math.min(remain, 30_000),
+    message: 'Free tier is shared — someone else is generating right now. Upgrade to Plus to skip the line.',
+  }, {
+    status: 429,
+    headers: { 'Retry-After': String(Math.max(1, Math.ceil(remain / 1000))) },
+  });
 }
 
-function sleep(ms) {
-  return new Promise(res => setTimeout(res, ms));
+// GET /api/queue/ticket — peek at the lane without claiming.
+export async function onRequestGet({ request, env }) {
+  const user = await getAuthedUser(request, env);
+  if (!user) return unauthorized();
+  const status = await getSharedLaneStatus(env);
+  return json({
+    busy: status.busy,
+    lane: usesSharedLane(user.plan) ? 'shared' : 'dedicated',
+    remaining_ms: status.busy ? Math.max(0, (status.until || 0) - Date.now()) : 0,
+  });
 }
