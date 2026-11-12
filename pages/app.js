@@ -2278,7 +2278,14 @@ function openChatMenu(anchor, chat) {
 const modalRoot = document.createElement('div');
 modalRoot.style.display = 'contents';
 document.body.appendChild(modalRoot);
+// Token the deferred close-cleanup checks before wiping modalRoot. If a new
+// openModal runs within the 200ms fade-out window, we bump the token so the
+// stale cleanup from the OLD close becomes a no-op and the new modal isn't
+// accidentally destroyed. Without this, clicking "Founder admin" from inside
+// the usage modal opened the panel then immediately nuked it 200ms later.
+let modalCloseToken = 0;
 function openModal(title, render) {
+  modalCloseToken++;              // invalidates any pending fade-out cleanup
   modalRoot.innerHTML = '';
   const s = document.createElement('div');
   s.className = 'scrim';
@@ -2294,7 +2301,13 @@ function closeModal() {
   const s = modalRoot.querySelector('.scrim');
   if (!s) return;
   s.classList.remove('show');
-  setTimeout(() => modalRoot.innerHTML = '', 200);
+  const myToken = ++modalCloseToken;
+  setTimeout(() => {
+    // If another openModal ran in the meantime it bumped the token past
+    // ours; bail so we don't wipe the new modal.
+    if (myToken !== modalCloseToken) return;
+    modalRoot.innerHTML = '';
+  }, 200);
 }
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
 
