@@ -131,11 +131,16 @@ else
   echo "  !! $CLI_ENTRY not found — add bootstrap() to your CLI entry manually"
 fi
 
-PROMPT_SRC="$(cd "$(dirname "$0")/.." && pwd)/prompts/agent.txt"
+PROMPT_SRC_DIR="$(cd "$(dirname "$0")/.." && pwd)/prompts"
 PROMPT_DST="packages/core/src/session/runner/prompt/system.txt"
-if [[ -f "$PROMPT_SRC" && -f "$PROMPT_DST" ]]; then
+if [[ -f "$PROMPT_SRC_DIR/agent.txt" && -f "$PROMPT_DST" ]]; then
   echo "[5b] inject ChadGPT agent system prompt"
-  cp "$PROMPT_SRC" "$PROMPT_DST"
+  cp "$PROMPT_SRC_DIR/agent.txt" "$PROMPT_DST"
+fi
+if [[ -f "$PROMPT_SRC_DIR/agent-tools.json" ]]; then
+  echo "[5c] inject ChadGPT agent tool spec"
+  mkdir -p packages/core/src/session/runner/prompt
+  cp "$PROMPT_SRC_DIR/agent-tools.json" packages/core/src/session/runner/prompt/agent-tools.json
 fi
 
 echo "[6/6] fresh git repo"
