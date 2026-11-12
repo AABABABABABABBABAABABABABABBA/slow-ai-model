@@ -1,7 +1,10 @@
 // ChadGPT service worker — cache the shell so the app opens instantly even
 // on a flaky connection. We never cache /api responses: those must stay live.
 
-const CACHE = 'chadgpt-shell-v2';
+// Bumping this version tells browsers to drop the old cached shell on
+// their next load. Bump it whenever a deploy needs to blow away stale
+// cached JS/CSS on existing installs.
+const CACHE = 'chadgpt-shell-v4';
 const SHELL = [
   '/',
   '/app.js',
@@ -24,6 +27,11 @@ self.addEventListener('activate', (event) => {
     )
   );
   self.clients.claim();
+});
+
+// App asks the new SW to take over immediately when it sees an update.
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'skip-waiting') self.skipWaiting();
 });
 
 self.addEventListener('fetch', (event) => {

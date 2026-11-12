@@ -541,6 +541,14 @@ function inlineRenameChat(titleEl, c) {
 }
 
 function renderChatList() {
+  try {
+    _renderChatListInner();
+  } catch (err) {
+    console.error('renderChatList failed', err);
+    chatListEl.innerHTML = `<div style="padding:16px;color:var(--danger);font-size:12px">Sidebar error: ${(err && err.message) || err}. Try "Clear all chats" from the profile menu to recover.</div>`;
+  }
+}
+function _renderChatListInner() {
   const q = _chatSearch.trim().toLowerCase();
   chatListEl.innerHTML = '';
 
@@ -2428,7 +2436,28 @@ input.focus();
 if ('serviceWorker' in navigator) {
   // Register after load so the first paint isn't slowed by SW setup.
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
+    navigator.serviceWorker.register('/sw.js').then(reg => {
+      // Check for updates on every page load so a new deploy doesn't need
+      // a hard-refresh to actually take effect.
+      reg.update().catch(() => {});
+      // If a new SW installs while this page is open, reload once so the
+      // user picks up the new app.js / styles.css immediately.
+      reg.addEventListener('updatefound', () => {
+        const next = reg.installing;
+        if (!next) return;
+        next.addEventListener('statechange', () => {
+          if (next.state === 'installed' && navigator.serviceWorker.controller) {
+            // A newer version has installed — tell it to skip waiting + reload.
+            next.postMessage({ type: 'skip-waiting' });
+          }
+        });
+      });
+      let reloaded = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (reloaded) return; reloaded = true;
+        window.location.reload();
+      });
+    }).catch(() => {});
   });
 }
 
