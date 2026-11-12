@@ -230,26 +230,41 @@ LOGO
     echo "   -> replaced snapshot.txt with ChadGPT-only catalog"
   fi
 
-  # Remove /connect. Only one provider is wired in this fork, so a
-  # Connect-an-integration dialog has nothing to offer.
+  # /connect — repoint at a ChadCode-only "already connected" dialog
+  # instead of opencode's full provider picker (which lists OpenAI,
+  # Anthropic, Groq, …). Users of this fork can only use ChadGPT so
+  # the real picker just confuses them.
+  OVERRIDES_SRC="$(cd "$(dirname "$0")/.." && pwd)/fork-overrides"
+  if [[ -f "$OVERRIDES_SRC/dialog-chadcode-connected.tsx" && -d packages/tui/src/component ]]; then
+    cp "$OVERRIDES_SRC/dialog-chadcode-connected.tsx" packages/tui/src/component/
+    echo "   -> added dialog-chadcode-connected.tsx"
+  fi
   if [[ -f packages/tui/src/app.tsx ]]; then
+    # Add the import right next to the old DialogIntegration import.
+    if ! grep -q 'DialogChadCodeConnected' packages/tui/src/app.tsx; then
+      sed -i 's|^import { DialogIntegration } from "./component/dialog-integration"$|import { DialogIntegration } from "./component/dialog-integration"\nimport { DialogChadCodeConnected } from "./component/dialog-chadcode-connected"|' packages/tui/src/app.tsx
+    fi
+    # Swap the dialog that /connect opens.
     perl -0777 -i -pe '
       s{
-        \s*\{\s*
+        \{\s*
         name:\s*"provider\.connect"[\s\S]{10,600}?
-        category:\s*"Integration",\s*
+        run:\s*\(\)\s*=>\s*\{\s*
+        dialog\.replace\(\(\)\s*=>\s*\(\s*
+        <DialogIntegration[\s\S]{0,400}?\/>\s*
+        \)\)\s*
         \},
-      }{\n      // /connect command removed in ChadCode (one provider wired via license).\n}gx
+      }{\{\n        name: "provider.connect",\n        title: "Connect an integration",\n        slash: { name: "connect" },\n        run: () => \{ dialog.replace(() => <DialogChadCodeConnected />) \},}gx
     ' packages/tui/src/app.tsx
-    echo "   -> removed /connect command from app.tsx"
+    echo "   -> repointed /connect at DialogChadCodeConnected"
   fi
   if [[ -f packages/tui/src/feature-plugins/sidebar/footer.tsx ]]; then
     perl -0777 -i -pe '
       s{
-        \s*<text[^>]*>OpenCode\ includes\ free\ models[\s\S]{10,800}?/connect</text>\s*</box>
-      }{\n          <text fg={props.context.theme.text.muted}>ChadCode ships with ChadGPT free models — start coding right away.</text>\n          <text fg={props.context.theme.text.muted}>Upgrade to Plus for ChadGPT Pro (Llama 3), ChadCoder (DeepSeek), and ChadGPT Ultra (Llama 3.3 70B).</text>}gx
+        \s*<text[^>]*>OpenCode\ includes\ free\ models[\s\S]{10,800}?Connect\ provider</text>\s*<text[^>]*>/connect</text>\s*</box>
+      }{\n          <text fg={props.context.theme.text.muted}>ChadCode ships with ChadGPT free models — start coding right away.</text>\n          <text fg={props.context.theme.text.muted}>Upgrade to Plus for ChadGPT Pro (Llama 3), ChadCoder (DeepSeek), and ChadGPT Ultra (Llama 3.3 70B).</text>\n          <box id="sidebar.footer.getting-started.connect" flexDirection="row" gap={1} justifyContent="space-between" onMouseUp={() => props.context.keymap.dispatch("provider.connect")}>\n            <text fg={props.context.theme.text.base}>Show connection</text>\n            <text fg={props.context.theme.text.muted}>/connect</text>\n          </box>}gx
     ' packages/tui/src/feature-plugins/sidebar/footer.tsx
-    echo "   -> removed /connect sidebar link"
+    echo "   -> rewrote sidebar footer with ChadCode copy + /connect link"
   fi
 
   # User-visible "opencode" command strings that didn't get caught by
