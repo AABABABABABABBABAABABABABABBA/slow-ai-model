@@ -13,8 +13,17 @@ database_id = "aa6f6d71-91b3-4820-8c7c-539209804d53"
 binding = "LIC_KV"
 id = "f91061afca3247d0aa94c4fd71ea6c1b"
 
+# R2 bucket holding the compiled chadcode binaries.
+# Create once:  npx wrangler r2 bucket create chadcode-binaries
+# Upload (per platform):
+#   npx wrangler r2 object put chadcode-binaries/chadcode/darwin-arm64/chadcode \
+#     --file packages/cli/dist/cli-darwin-arm64/bin/chadcode --remote
+[[r2_buckets]]
+binding = "BINARIES"
+bucket_name = "chadcode-binaries"
+
 # Secrets to set via `wrangler secret put`:
-#   FOUNDER_TOKEN  — bearer for /license/revoke + /update/publish
+#   FOUNDER_TOKEN  — bearer for /license/revoke + /update/publish + /license/create + /license/list
 #   TOKEN_SECRET   — HMAC secret used to sign offline verification tokens
 #
 # The update signing keypair (ed25519) is stored OFFLINE on the founder's

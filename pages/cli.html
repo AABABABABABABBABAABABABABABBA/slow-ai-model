@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ChadCode CLI — Download</title>
+<meta name="theme-color" content="#0e0f13">
+<link rel="icon" href="/icons/favicon-32.png">
+<style>
+  :root { color-scheme: dark; --fg:#e6e6e6; --muted:#8f8f98; --bg:#0e0f13; --card:#171922; --border:#262a35; --accent:#8a4fd1; --ok:#2e7d32; --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif; line-height: 1.5; -webkit-text-size-adjust: 100%; }
+  main { max-width: 820px; margin: 0 auto; padding: 32px 20px 64px; padding-top: calc(32px + env(safe-area-inset-top, 0px)); }
+  .logo { display:inline-flex; width:56px; height:56px; border-radius:14px; background: linear-gradient(135deg, #4e2a8e, #8a4fd1); align-items:center; justify-content:center; color:#fff; font-size:28px; font-weight:800; margin-bottom: 16px; }
+  h1 { margin: 0 0 6px; font-size: 32px; letter-spacing: -0.02em; }
+  .sub { color: var(--muted); margin: 0 0 32px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-bottom: 16px; }
+  .card h2 { margin: 0 0 10px; font-size: 16px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+  .platforms { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media (max-width: 560px) { .platforms { grid-template-columns: 1fr; } }
+  .plat { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; }
+  .plat .name { font-weight: 600; }
+  .plat .sub { font-size: 12px; color: var(--muted); margin: 0; font-family: var(--mono); }
+  button, .btn { background: linear-gradient(135deg, #4e2a8e, #8a4fd1); color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-weight: 600; font-size: 13px; cursor: pointer; font-family: inherit; text-decoration: none; display: inline-block; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .ghost { background: transparent; color: var(--fg); border: 1px solid var(--border); }
+  pre { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; font-family: var(--mono); font-size: 12.5px; overflow-x: auto; white-space: pre; }
+  code { font-family: var(--mono); font-size: 12.5px; background: var(--bg); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border); }
+  .lic_box { padding: 14px; border-radius: 10px; background: linear-gradient(135deg, #4e2a8e33, #8a4fd120); border: 1px solid #8a4fd166; margin-top: 10px; }
+  .lic_key { font-family: var(--mono); font-size: 13px; word-break: break-all; margin: 8px 0; color: #fff; user-select: all; }
+  .lic_warn { font-size: 12px; color: #f0b429; }
+  .err { color: #e06666; padding: 10px 14px; background: #e0666622; border: 1px solid #e0666688; border-radius: 8px; }
+  .steps { padding-left: 20px; margin: 0; }
+  .steps li { margin: 6px 0; }
+  a { color: #b58cff; }
+</style>
+</head>
+<body>
+<main>
+  <div class="logo">C</div>
+  <h1>ChadCode CLI</h1>
+  <p class="sub">Terminal coding agent powered by ChadGPT. Hardware-bound license, signed auto-updater, single-URL API.</p>
+
+  <div class="card">
+    <h2>1. Get your license key</h2>
+    <p class="sub" id="auth_hint" style="margin:4px 0 10px">Sign in at <a href="/">chadgpt-964.pages.dev</a> first — licenses are tied to your account.</p>
+    <button id="gen_btn" disabled>Generate license key</button>
+    <div id="lic_wrap"></div>
+  </div>
+
+  <div class="card">
+    <h2>2. Download your platform</h2>
+    <div class="platforms">
+      <div class="plat"><div><div class="name">macOS Apple Silicon</div><p class="sub">darwin-arm64</p></div><a class="btn" href="#" data-plat="darwin-arm64">Download</a></div>
+      <div class="plat"><div><div class="name">macOS Intel</div><p class="sub">darwin-x64</p></div><a class="btn" href="#" data-plat="darwin-x64">Download</a></div>
+      <div class="plat"><div><div class="name">Linux x64</div><p class="sub">linux-x64</p></div><a class="btn" href="#" data-plat="linux-x64">Download</a></div>
+      <div class="plat"><div><div class="name">Linux arm64</div><p class="sub">linux-arm64</p></div><a class="btn" href="#" data-plat="linux-arm64">Download</a></div>
+      <div class="plat"><div><div class="name">Windows x64</div><p class="sub">windows-x64</p></div><a class="btn" href="#" data-plat="windows-x64">Download</a></div>
+      <div class="plat"><div><div class="name">Windows arm64</div><p class="sub">windows-arm64</p></div><a class="btn" href="#" data-plat="windows-arm64">Download</a></div>
+    </div>
+    <p class="sub" style="margin-top:12px">Each download requires your license key in the <code>Authorization: Bearer</code> header. The server streams the signed binary from Cloudflare R2 after verifying the license is active.</p>
+  </div>
+
+  <div class="card">
+    <h2>3. Install &amp; run</h2>
+    <p class="sub" style="margin:4px 0 10px">macOS / Linux:</p>
+<pre>chmod +x chadcode
+xattr -d com.apple.quarantine chadcode   # macOS only, first run
+export CHADCODE_LICENSE='chad-xxxx-xxxx-xxxx-...'   # from step 1
+./chadcode</pre>
+    <p class="sub" style="margin:16px 0 10px">Windows (PowerShell):</p>
+<pre>$env:CHADCODE_LICENSE='chad-xxxx-xxxx-xxxx-...'
+.\chadcode.exe</pre>
+    <p class="sub" style="margin-top:14px">First run binds the license to this machine's hardware fingerprint. The CLI caches a signed offline token for 24h so flaky networks don't block you. Subsequent runs on OTHER machines will be refused — generate a separate key or revoke + re-bind.</p>
+  </div>
+
+  <div class="card">
+    <h2>Security</h2>
+    <ul class="steps">
+      <li><b>Hardware binding</b>: license locks to machine-id + MAC + CPU + arch on first run</li>
+      <li><b>Signed updates</b>: the auto-updater verifies ed25519 signatures over the SHA-256 of each release — a tampered binary is refused</li>
+      <li><b>Single API host</b>: all backend workers are hidden behind <code>chadgpt-api.corbyiscool.workers.dev</code>; the binary leaks no per-service URLs</li>
+      <li><b>Offline tokens</b>: 24h cached verification so a dropped connection doesn't stop you working; past that, the CLI must re-verify</li>
+      <li><b>Instant revocation</b>: compromised keys are killed from the founder panel; the client's next verify refuses</li>
+    </ul>
+  </div>
+</main>
+
+<script>
+async function api(path, opts) {
+  const r = await fetch('/api' + path, { credentials: 'include', headers: { 'Content-Type': 'application/json' }, ...opts });
+  const t = r.headers.get('content-type') || '';
+  const data = t.includes('application/json') ? await r.json().catch(() => ({})) : null;
+  return { ok: r.ok, status: r.status, data };
+}
+
+async function init() {
+  const me = await api('/me', { method: 'GET' });
+  const hint = document.getElementById('auth_hint');
+  const gen = document.getElementById('gen_btn');
+  if (!me.ok) {
+    hint.innerHTML = 'Not signed in. <a href="/">Sign in first</a>, then come back here.';
+    return;
+  }
+  const email = me.data.user?.email || '';
+  const plan = me.data.user?.plan || 'free';
+  hint.innerHTML = `Signed in as <b>${email}</b> (${plan}). Your license will be bound to this account.`;
+  gen.disabled = false;
+  gen.addEventListener('click', generateLicense);
+
+  document.querySelectorAll('[data-plat]').forEach(btn => btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    const plat = btn.getAttribute('data-plat');
+    const key = sessionStorage.getItem('chadcode_key');
+    if (!key) { alert('Generate a license key in step 1 first.'); return; }
+    downloadBinary(plat, key, btn);
+  }));
+}
+
+async function generateLicense() {
+  const gen = document.getElementById('gen_btn');
+  gen.disabled = true; gen.textContent = 'Generating…';
+  const r = await api('/cli/license', { method: 'POST', body: '{}' });
+  const wrap = document.getElementById('lic_wrap');
+  if (!r.ok) {
+    wrap.innerHTML = `<div class="err">Failed: ${r.data?.error || r.status}${r.data?.detail ? '<br><small>' + r.data.detail + '</small>' : ''}</div>`;
+    gen.disabled = false; gen.textContent = 'Try again';
+    return;
+  }
+  sessionStorage.setItem('chadcode_key', r.data.key);
+  wrap.innerHTML = `
+    <div class="lic_box">
+      <div class="sub" style="color:#fff;opacity:.85">Your license key — shown ONCE:</div>
+      <div class="lic_key">${r.data.key}</div>
+      <div class="lic_warn">Save it now. We don't store it in plaintext.</div>
+      <div style="margin-top:10px"><button class="ghost" id="copy_key">Copy</button></div>
+    </div>`;
+  gen.style.display = 'none';
+  document.getElementById('copy_key').addEventListener('click', async () => {
+    await navigator.clipboard.writeText(r.data.key);
+    document.getElementById('copy_key').textContent = 'Copied ✓';
+  });
+}
+
+async function downloadBinary(plat, key, btn) {
+  const original = btn.textContent;
+  btn.textContent = 'Fetching…';
+  try {
+    const r = await fetch('https://chadcode-license.corbyiscool.workers.dev/download?platform=' + encodeURIComponent(plat), {
+      headers: { 'Authorization': 'Bearer ' + key },
+    });
+    if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = plat.startsWith('windows') ? 'chadcode.exe' : 'chadcode';
+    a.click();
+    URL.revokeObjectURL(url);
+    btn.textContent = 'Downloaded ✓';
+  } catch (e) {
+    btn.textContent = 'Failed';
+    alert('Download failed: ' + e.message + '\n\nThe binary is streamed from R2 — if it 404s, the founder needs to upload the binary for this platform first.');
+  } finally {
+    setTimeout(() => { btn.textContent = original; }, 2500);
+  }
+}
+
+init();
+</script>
+</body>
+</html>

@@ -27,6 +27,9 @@ export default {
       if (url.pathname === '/license/activate' && request.method === 'POST')  return activate(request, env);
       if (url.pathname === '/license/verify'   && request.method === 'POST')  return verify(request, env);
       if (url.pathname === '/license/revoke'   && request.method === 'POST')  return revoke(request, env);
+      if (url.pathname === '/license/create'   && request.method === 'POST')  return createLicense(request, env);
+      if (url.pathname === '/license/list'     && request.method === 'GET')   return listLicenses(request, env);
+      if (url.pathname === '/download'         && request.method === 'GET')   return downloadBinary(request, env);
       if (url.pathname === '/update/check'     && request.method === 'GET')   return updateCheck(request, env);
       if (url.pathname === '/update/publish'   && request.method === 'POST')  return updatePublish(request, env);
       if (url.pathname === '/health')                                          return j({ ok: true, service: 'chadcode-license', ts: Date.now() });
@@ -142,6 +145,84 @@ async function signToken(env, payload) {
   const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(body));
   const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sig))).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
   return `${body}.${sigB64}`;
+}
+
+// ---------- /license/create ----------
+// Founder-only (via FOUNDER_TOKEN). Issues a license row from a pre-hashed
+// key — the Pages API computes the SHA-256 on the raw key so we never see
+// the plaintext here. Body: { id, key_hash, plan, owner_email, max_devices, note? }
+async function createLicense(request, env) {
+  if (!founderAuth(request, env)) return j({ error: 'founder only' }, 403);
+  const b = await request.json().catch(() => null);
+  for (const k of ['id', 'key_hash', 'plan', 'owner_email', 'max_devices']) {
+    if (b?.[k] === undefined || b?.[k] === null) return j({ error: `${k} required` }, 400);
+  }
+  if (!/^[0-9a-f]{64}$/i.test(b.key_hash)) return j({ error: 'key_hash must be 64-char hex' }, 400);
+  if (!['free', 'pro', 'team', 'founder-grant'].includes(b.plan)) return j({ error: 'plan must be free/pro/team/founder-grant' }, 400);
+  await env.LIC_DB.prepare(
+    'INSERT INTO licenses (id, key_hash, plan, owner_email, max_devices, transferable, issued_at, expires_at, revoked, notes) VALUES (?, ?, ?, ?, ?, 0, ?, NULL, 0, ?)'
+  ).bind(b.id, b.key_hash, b.plan, b.owner_email, b.max_devices, Date.now(), b.note || null).run();
+  return j({ ok: true, id: b.id });
+}
+
+// ---------- /license/list ----------
+// Founder-only. Returns metadata for an owner's licenses (no raw keys ever).
+async function listLicenses(request, env) {
+  if (!founderAuth(request, env)) return j({ error: 'founder only' }, 403);
+  const url = new URL(request.url);
+  const owner = url.searchParams.get('owner_email');
+  if (!owner) return j({ error: 'owner_email required' }, 400);
+  const rows = await env.LIC_DB.prepare(
+    'SELECT id, plan, max_devices, issued_at, expires_at, revoked, notes FROM licenses WHERE owner_email = ? ORDER BY issued_at DESC'
+  ).bind(owner).all();
+  const withCounts = [];
+  for (const row of (rows.results || [])) {
+    const dev = await env.LIC_DB.prepare(
+      'SELECT COUNT(*) AS n FROM license_devices WHERE license_id = ?'
+    ).bind(row.id).first();
+    withCounts.push({ ...row, bound_devices: Number(dev?.n || 0) });
+  }
+  return j({ licenses: withCounts });
+}
+
+// ---------- /download ----------
+// GET /download?platform=darwin-arm64  with Authorization: Bearer <license-key>
+// Streams the matching binary from R2 after verifying the license is active.
+// Platforms map 1:1 to the folder names in the build output
+// (darwin-arm64, darwin-x64, linux-x64, linux-arm64, windows-x64, windows-arm64).
+async function downloadBinary(request, env) {
+  if (!env.BINARIES) return j({ error: 'binary bucket not bound' }, 503);
+  const auth = request.headers.get('Authorization') || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+  if (!token) return j({ error: 'bearer license key required' }, 401);
+
+  const keyHash = await sha256Hex(token);
+  const row = await env.LIC_DB.prepare(
+    'SELECT id, plan, expires_at, revoked FROM licenses WHERE key_hash = ?'
+  ).bind(keyHash).first();
+  if (!row) return j({ error: 'invalid license' }, 403);
+  if (row.revoked) return j({ error: 'license revoked' }, 403);
+  if (row.expires_at && row.expires_at < Date.now()) return j({ error: 'license expired' }, 403);
+
+  const url = new URL(request.url);
+  const platform = (url.searchParams.get('platform') || '').toLowerCase();
+  if (!/^(darwin|linux|windows)-(arm64|x64)(-baseline)?(-musl)?$/.test(platform)) {
+    return j({ error: 'invalid platform', expected: 'darwin-arm64 | darwin-x64 | linux-x64 | linux-arm64 | windows-x64 | windows-arm64' }, 400);
+  }
+  const ext = platform.startsWith('windows') ? '.exe' : '';
+  const key = `chadcode/${platform}/chadcode${ext}`;
+
+  const obj = await env.BINARIES.get(key);
+  if (!obj) return j({ error: 'binary not found in R2', key }, 404);
+
+  return new Response(obj.body, {
+    headers: {
+      'Content-Type': 'application/octet-stream',
+      'Content-Disposition': `attachment; filename="chadcode${ext}"`,
+      'Content-Length': String(obj.size),
+      'X-License-Plan': row.plan,
+    },
+  });
 }
 
 // ---------- /license/revoke ----------
