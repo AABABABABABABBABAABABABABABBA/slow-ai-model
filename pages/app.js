@@ -18,8 +18,32 @@
       bar.querySelector('#chadgpt_err_msg').textContent = msg;
     } catch {}
   }
-  window.addEventListener('error', (e) => { show('App error', (e.error?.stack || e.message || 'unknown').slice(0, 400)); });
-  window.addEventListener('unhandledrejection', (e) => { show('Promise rejection', ((e.reason?.stack || e.reason?.message || e.reason) + '').slice(0, 400)); });
+  // Third-party ad scripts (AdSense, Infolinks, Coinzilla, Adsterra, …) throw
+  // internal errors we can't see into — the browser reports them as the
+  // generic string "Script error." with no stack, filename, or line number
+  // because they're cross-origin and lack CORS headers. They're not our
+  // bugs and the user can't do anything about them, so swallow them here.
+  // We also swallow anything whose filename points at a known ad origin.
+  const AD_HOST_RE = /(googlesyndication|doubleclick|google-analytics|googletagmanager|infolinks|coinzilla|coinzillatag|adsterra|a-ads\.com|popads|media\.net|propellerads|inklinkor)/i;
+  function isAdNoise(e) {
+    const msg = (e && e.message) || '';
+    if (/^Script error\.?$/i.test(msg.trim())) return true;
+    const src = (e && (e.filename || e.error?.fileName)) || '';
+    if (src && AD_HOST_RE.test(src)) return true;
+    const stack = (e && e.error && e.error.stack) || '';
+    if (stack && AD_HOST_RE.test(stack)) return true;
+    return false;
+  }
+  window.addEventListener('error', (e) => {
+    if (isAdNoise(e)) return;
+    show('App error', (e.error?.stack || e.message || 'unknown').slice(0, 400));
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    const r = e.reason;
+    const text = (r?.stack || r?.message || r) + '';
+    if (AD_HOST_RE.test(text)) return;
+    show('Promise rejection', text.slice(0, 400));
+  });
 })();
 
 const CFG = window.CHADGPT_CONFIG;
