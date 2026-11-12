@@ -275,6 +275,29 @@ LOGO
       packages/tui/src/component/dialog-pair.tsx
     echo "   -> dialog-pair.tsx: service-set hint → chadcode"
   fi
+
+  # Kill the live models.opencode.ai fetch. Even with our bundled
+  # snapshot, the TUI will fetch the full catalog (Big Pickle, DeepSeek
+  # V4.1, GLM-5.3, Iceman, Inkling, LongCat, Flint 40B …) on start and
+  # mix it in. Flip the gate to always-off.
+  if [[ -f packages/cli/src/server-process.ts ]]; then
+    sed -i \
+      -e 's|url: process\.env\.OPENCODE_MODELS_URL,|url: undefined, // ChadCode: no live catalog fetch|' \
+      -e 's|fetch: !truthy(process\.env\.OPENCODE_DISABLE_MODELS_FETCH),|fetch: false, // ChadCode: always disabled|' \
+      packages/cli/src/server-process.ts
+    echo "   -> server-process.ts: disabled live models.opencode.ai fetch"
+  fi
+
+  # Disable the OpencodePlugin provider — it exposes opencode.ai's hosted
+  # models directly into /models even without the user signing in. The
+  # plugin file stays importable (so guarded-set reference still
+  # compiles) but it's no longer in the active ProviderPlugins array.
+  if [[ -f packages/core/src/plugin/provider.ts ]]; then
+    sed -i \
+      -e 's|^  OpencodePlugin,|  // ChadCode: OpencodePlugin removed (opencode.ai hosted models)\n  // OpencodePlugin,|' \
+      packages/core/src/plugin/provider.ts
+    echo "   -> provider.ts: unregistered OpencodePlugin from active list"
+  fi
 fi
 
 PROMPT_SRC_DIR="$(cd "$(dirname "$0")/.." && pwd)/prompts"
