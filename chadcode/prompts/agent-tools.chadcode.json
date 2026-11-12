@@ -1,0 +1,469 @@
+[
+  {
+    "name": "read_file",
+    "description": "Read a file by absolute or workspace-relative path. Returns the lines in [start, end] inclusive (1-indexed), or the whole file if `should_read_entire_file` is true and the file is small enough.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "target_file": {
+          "type": "string",
+          "description": "Path of the file to read."
+        },
+        "start_line_one_indexed": {
+          "type": "integer",
+          "description": "1-indexed start line (inclusive)."
+        },
+        "end_line_one_indexed_inclusive": {
+          "type": "integer",
+          "description": "1-indexed end line (inclusive)."
+        },
+        "should_read_entire_file": {
+          "type": "boolean",
+          "description": "Read the whole file (rejected if > 1 MB)."
+        }
+      },
+      "required": [
+        "target_file"
+      ]
+    }
+  },
+  {
+    "name": "write_file",
+    "description": "Create or overwrite a file. Parent directories are created automatically. Prompts for approval unless in yolo mode.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "target_file": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string",
+          "description": "Full file contents. The file is overwritten in its entirety."
+        }
+      },
+      "required": [
+        "target_file",
+        "content"
+      ]
+    }
+  },
+  {
+    "name": "edit_file",
+    "description": "Replace one occurrence of `old_string` with `new_string`. Fails if `old_string` is not found, or is not unique in the file. Include enough context (3-5 lines above/below) to disambiguate.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "file_path": {
+          "type": "string"
+        },
+        "old_string": {
+          "type": "string"
+        },
+        "new_string": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "file_path",
+        "old_string",
+        "new_string"
+      ]
+    }
+  },
+  {
+    "name": "delete_file",
+    "description": "Delete a file. Fails silently if it does not exist. Does not delete directories — use run_command with rm -r for that, which asks for its own approval.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "target_file": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_file"
+      ]
+    }
+  },
+  {
+    "name": "list_dir",
+    "description": "List the contents of a directory. Returns up to 1000 entries. Each line is name followed by (file|dir|link) and size for files.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "relative_workspace_path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "relative_workspace_path"
+      ]
+    }
+  },
+  {
+    "name": "move_file",
+    "description": "Move or rename a file or directory. Creates parent directories of the destination if needed.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "destination": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "destination"
+      ]
+    }
+  },
+  {
+    "name": "copy_file",
+    "description": "Copy a file. For directories, use run_command with cp -r.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "destination": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "destination"
+      ]
+    }
+  },
+  {
+    "name": "make_dir",
+    "description": "Create a directory (recursively — mkdir -p). No error if it already exists.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "directory": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "directory"
+      ]
+    }
+  },
+  {
+    "name": "grep_search",
+    "description": "Fast exact / regex search using ripgrep. Capped at 50 matches. Use for known symbols, function names, strings.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Regex pattern. Escape ( ) [ ] { } + * ? ^ $ | . \\\\ when searching literally."
+        },
+        "include_pattern": {
+          "type": "string",
+          "description": "Glob to include, e.g. \"*.ts\"."
+        },
+        "exclude_pattern": {
+          "type": "string",
+          "description": "Glob to exclude, e.g. \"**/dist/**\"."
+        },
+        "case_sensitive": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "query"
+      ]
+    }
+  },
+  {
+    "name": "file_search",
+    "description": "Find files whose path contains the query substring (case-insensitive). Up to 10 hits. Use when you know part of a filename.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Max results. Default 10, cap 100."
+        }
+      },
+      "required": [
+        "query"
+      ]
+    }
+  },
+  {
+    "name": "glob",
+    "description": "List files matching a glob pattern (e.g. \"src/**/*.ts\"). Uses Node internal matcher — no external dependency.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "pattern": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "pattern"
+      ]
+    }
+  },
+  {
+    "name": "run_command",
+    "description": "Run a shell command in the user's current working directory. Prompts for approval unless in yolo mode. For long-running processes (servers, watchers), set is_background: true and the call returns a pid.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string",
+          "description": "Full shell command. Quote arguments correctly."
+        },
+        "is_background": {
+          "type": "boolean",
+          "description": "Spawn and return a pid without waiting for exit."
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "description": "Max runtime in ms for foreground commands. Default 60000."
+        },
+        "explanation": {
+          "type": "string",
+          "description": "One sentence describing why."
+        }
+      },
+      "required": [
+        "command"
+      ]
+    }
+  },
+  {
+    "name": "list_processes",
+    "description": "List background processes started by run_command in this session (not every process on the system).",
+    "parameters": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "read_process_output",
+    "description": "Read captured stdout/stderr of a background process started in this session. Returns the last N lines (default 200).",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "pid": {
+          "type": "integer"
+        },
+        "tail_lines": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "pid"
+      ]
+    }
+  },
+  {
+    "name": "kill_process",
+    "description": "Send a signal to a background process started in this session (only session-tracked pids — not arbitrary OS pids).",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "pid": {
+          "type": "integer"
+        },
+        "signal": {
+          "type": "string",
+          "description": "POSIX signal name (SIGTERM, SIGKILL, …). Default SIGTERM. Ignored on Windows."
+        }
+      },
+      "required": [
+        "pid"
+      ]
+    }
+  },
+  {
+    "name": "web_fetch",
+    "description": "Fetch a URL and return its body. `as=markdown` strips HTML to text. Private-network addresses (10.x, 192.168.x, 127.x, cloud metadata) are blocked.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string",
+          "description": "GET, POST, HEAD, … default GET"
+        },
+        "headers": {
+          "type": "object",
+          "description": "Request headers."
+        },
+        "body": {
+          "type": "string",
+          "description": "Request body (POST/PUT)."
+        },
+        "as": {
+          "type": "string",
+          "enum": [
+            "text",
+            "json",
+            "markdown"
+          ],
+          "description": "How to decode the body. Default text."
+        }
+      },
+      "required": [
+        "url"
+      ]
+    }
+  },
+  {
+    "name": "web_search",
+    "description": "Search the web via DuckDuckGo. Returns top result titles, URLs, and snippets. No API key required.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "search_term": {
+          "type": "string"
+        },
+        "num": {
+          "type": "integer",
+          "description": "Max results to return. Default 8, cap 20."
+        }
+      },
+      "required": [
+        "search_term"
+      ]
+    }
+  },
+  {
+    "name": "clipboard_read",
+    "description": "Read the user's system clipboard. Returns text. Supported on macOS (pbpaste), Linux (xclip / xsel / wl-paste), Windows (PowerShell Get-Clipboard).",
+    "parameters": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "clipboard_write",
+    "description": "Replace the user's system clipboard contents with text. Supported on macOS, Linux (xclip / wl-copy), Windows.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ]
+    }
+  },
+  {
+    "name": "open_url",
+    "description": "Open a URL in the user's default browser.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ]
+    }
+  },
+  {
+    "name": "open_file",
+    "description": "Open a file with the user's default application for its type (same as double-clicking it).",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ]
+    }
+  },
+  {
+    "name": "screenshot",
+    "description": "Take a screenshot of the user's screen and save to out_path (default: ./screenshot-<timestamp>.png). Returns the path. Supported on macOS (screencapture), Linux (grim / gnome-screenshot / import), Windows (PowerShell).",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "out_path": {
+          "type": "string",
+          "description": "Where to save the PNG. Default: screenshot-<ts>.png in cwd."
+        },
+        "display_number": {
+          "type": "integer",
+          "description": "Display index on macOS/Linux (optional)."
+        }
+      }
+    }
+  },
+  {
+    "name": "os_info",
+    "description": "Return basic info about the host: platform, arch, cpu model, total/free memory, uptime, hostname, user, shell, node version.",
+    "parameters": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "env_get",
+    "description": "Read one environment variable. Use env_list to see names first. Variables commonly containing secrets (TOKEN, KEY, SECRET, PASSWORD) require approval.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    }
+  },
+  {
+    "name": "env_list",
+    "description": "List names of environment variables (NOT values). Optional pattern filters the list.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "description": "Case-insensitive substring filter."
+        }
+      }
+    }
+  },
+  {
+    "name": "notify",
+    "description": "Show a desktop notification. macOS: osascript display notification. Linux: notify-send. Windows: PowerShell BurntToast if available, else a MessageBox.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ]
+    }
+  }
+]

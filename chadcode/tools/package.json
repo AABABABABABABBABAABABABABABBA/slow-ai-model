@@ -1,0 +1,29 @@
+{
+  "name": "@chadcode/tools",
+  "version": "0.1.0",
+  "description": "Agentic tool pack for ChadCode — file ops, shell, OS control, web, approval policy.",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./fs": "./dist/fs.js",
+    "./shell": "./dist/shell.js",
+    "./web": "./dist/web.js",
+    "./os": "./dist/os.js",
+    "./search": "./dist/search.js",
+    "./approval": "./dist/approval.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

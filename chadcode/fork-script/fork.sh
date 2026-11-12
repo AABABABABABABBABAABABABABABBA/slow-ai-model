@@ -95,40 +95,85 @@ distribution as a whole is not open source and may not be redistributed in
 source or binary form without the written permission of the copyright holder.
 EOF
 
-echo "[5/6] wire the CLI entrypoint into @chadcode/license"
+echo "[5/6] wire the CLI entrypoint into @chadcode/license + @chadcode/tools"
 CLI_ENTRY="packages/cli/src/index.ts"
 if [[ -f "$CLI_ENTRY" ]]; then
-  # Insert the license bootstrap AFTER the shebang (shebangs must be line 1).
+  # Insert the license + tools bootstrap AFTER the shebang (shebangs must be line 1).
   tmpfile=$(mktemp)
   first=$(head -n1 "$CLI_ENTRY")
   if [[ "$first" == "#!"* ]]; then
     echo "$first" > "$tmpfile"
     cat >> "$tmpfile" <<'EOF'
 import { bootstrap } from '@chadcode/license';
+import { createRegistry as createChadcodeTools, makeDefaultConfirm, toolsSchema as chadcodeToolsSchema } from '@chadcode/tools';
 await bootstrap({
   licenseServer: process.env.CHADCODE_LICENSE_SERVER || 'https://chadcode-license.corbyiscool.workers.dev',
   version: process.env.CHADCODE_VERSION || '0.0.0',
   binary: process.execPath,
   skipLicense: process.env.CHADCODE_SKIP_LICENSE === '1',
 });
+// Make the ChadCode tool pack reachable to the runner. Agent-mode CLI
+// should pull from globalThis.__chadcodeTools (set here) + call the
+// registry's .execute on each tool_use event.
+// Safety mode: 'yolo' | 'auto' (default 'auto' — low-risk auto, medium/high prompt).
+const __chadcodeMode = (process.env.CHADCODE_APPROVAL === 'yolo' ? 'yolo' : 'auto');
+globalThis.__chadcodeTools = {
+  registry: createChadcodeTools(),
+  schema: chadcodeToolsSchema(),
+  mode: __chadcodeMode,
+  confirm: makeDefaultConfirm({ mode: __chadcodeMode }),
+};
 EOF
     tail -n+2 "$CLI_ENTRY" >> "$tmpfile"
   else
     cat > "$tmpfile" <<'EOF'
 import { bootstrap } from '@chadcode/license';
+import { createRegistry as createChadcodeTools, makeDefaultConfirm, toolsSchema as chadcodeToolsSchema } from '@chadcode/tools';
 await bootstrap({
   licenseServer: process.env.CHADCODE_LICENSE_SERVER || 'https://chadcode-license.corbyiscool.workers.dev',
   version: process.env.CHADCODE_VERSION || '0.0.0',
   binary: process.execPath,
   skipLicense: process.env.CHADCODE_SKIP_LICENSE === '1',
 });
+const __chadcodeMode = (process.env.CHADCODE_APPROVAL === 'yolo' ? 'yolo' : 'auto');
+globalThis.__chadcodeTools = {
+  registry: createChadcodeTools(),
+  schema: chadcodeToolsSchema(),
+  mode: __chadcodeMode,
+  confirm: makeDefaultConfirm({ mode: __chadcodeMode }),
+};
 EOF
     cat "$CLI_ENTRY" >> "$tmpfile"
   fi
   mv "$tmpfile" "$CLI_ENTRY"
-  echo "  -> injected bootstrap into $CLI_ENTRY"
+  echo "  -> injected bootstrap + tools registry into $CLI_ENTRY"
 else
-  echo "  !! $CLI_ENTRY not found — add bootstrap() to your CLI entry manually"
+  echo "  !! $CLI_ENTRY not found — add bootstrap() + tools registry to your CLI entry manually"
+fi
+
+# Copy the @chadcode/tools package into the fork and wire it as a workspace dep.
+TOOLS_SRC="$(cd "$(dirname "$0")/.." && pwd)/tools"
+if [[ -d "$TOOLS_SRC" ]]; then
+  echo "[5a] copy @chadcode/tools into packages/tools"
+  mkdir -p packages/tools
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -a --exclude='node_modules' --exclude='dist' "$TOOLS_SRC"/ packages/tools/
+  else
+    tar -C "$TOOLS_SRC" --exclude='node_modules' --exclude='dist' -cf - . | tar -C packages/tools -xf -
+  fi
+  # Register as workspace dep on the CLI package.
+  if [[ -f packages/cli/package.json ]]; then
+    node -e '
+      const fs=require("fs");
+      const p="packages/cli/package.json";
+      const j=JSON.parse(fs.readFileSync(p,"utf8"));
+      j.dependencies = j.dependencies || {};
+      j.dependencies["@chadcode/tools"] = "workspace:*";
+      j.dependencies["@chadcode/license"] = j.dependencies["@chadcode/license"] || "workspace:*";
+      fs.writeFileSync(p, JSON.stringify(j,null,2)+"\n");
+    '
+    echo "  -> added @chadcode/tools as a workspace dep of packages/cli"
+  fi
 fi
 
 PROMPT_SRC_DIR="$(cd "$(dirname "$0")/.." && pwd)/prompts"
