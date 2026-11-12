@@ -473,13 +473,20 @@ const DOTS_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 function buildChatRow(c, { archived = false } = {}) {
   const el = document.createElement('div');
   el.className = 'sb_chat' + (c.id === state.activeChat ? ' active' : '') + (archived ? ' archived' : '');
+  // Click anywhere on the row opens the chat. The per-row buttons call
+  // stopPropagation on their own click handlers so they don't double-fire.
+  el.addEventListener('click', (e) => {
+    // If the user clicked an action button, let that handler run instead.
+    if (e.target.closest('.sb_chat_mini, .sb_chat_dots, .sb_rename_input')) return;
+    setActiveChat(c);
+    closeSidebar();
+  });
   const title = document.createElement('span');
   title.className = 'sb_chat_title';
   title.textContent = c.title;
   title.title = c.title;
-  title.addEventListener('click', () => { setActiveChat(c); closeSidebar(); });
   // Double-click to rename inline.
-  title.addEventListener('dblclick', (e) => { e.preventDefault(); inlineRenameChat(title, c); });
+  title.addEventListener('dblclick', (e) => { e.preventDefault(); e.stopPropagation(); inlineRenameChat(title, c); });
   el.appendChild(title);
 
   // Per-row quick actions. On mobile these are always-shown; on desktop hover.
