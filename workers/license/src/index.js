@@ -30,6 +30,8 @@ export default {
       if (url.pathname === '/license/create'   && request.method === 'POST')  return createLicense(request, env);
       if (url.pathname === '/license/list'     && request.method === 'GET')   return listLicenses(request, env);
       if (url.pathname === '/download'         && request.method === 'GET')   return downloadBinary(request, env);
+      if (url.pathname === '/install.ps1'      && request.method === 'GET')   return installPs1(request, env);
+      if (url.pathname === '/install.sh'       && request.method === 'GET')   return installSh(request, env);
       if (url.pathname === '/update/check'     && request.method === 'GET')   return updateCheck(request, env);
       if (url.pathname === '/update/publish'   && request.method === 'POST')  return updatePublish(request, env);
       if (url.pathname === '/health')                                          return j({ ok: true, service: 'chadcode-license', ts: Date.now() });
@@ -221,6 +223,131 @@ async function downloadBinary(request, env) {
       'Content-Disposition': `attachment; filename="chadcode${ext}"`,
       'Content-Length': String(obj.size),
       'X-License-Plan': row.plan,
+    },
+  });
+}
+
+// ---------- /install.ps1 ----------
+// GET /install.ps1 — returns a PowerShell installer that fetches the signed
+// Windows binary from /download using the CHADCODE_LICENSE env var the
+// user sets before piping to `iex`, writes it to %LOCALAPPDATA%\ChadCode
+// and adds that folder to the user PATH. The script never embeds a license
+// key — the user carries it in the env var.
+function installPs1(request, env) {
+  const self = new URL(request.url).origin;
+  const script = [
+    `# ChadCode PowerShell installer.`,
+    `# Usage:`,
+    `#   $env:CHADCODE_LICENSE='<your-key>'; $env:CHADCODE_PLATFORM='windows-x64';`,
+    `#   iwr -useb ${self}/install.ps1 | iex`,
+    `#`,
+    `# Platforms: windows-x64, windows-arm64. Falls back to the current arch`,
+    `# if CHADCODE_PLATFORM is unset.`,
+    ``,
+    `$ErrorActionPreference = 'Stop'`,
+    ``,
+    `if (-not $env:CHADCODE_LICENSE) {`,
+    `  Write-Host 'ERROR: set $env:CHADCODE_LICENSE=<key> before running the installer.' -ForegroundColor Red`,
+    `  Write-Host 'Get your key at https://chadgpt-964.pages.dev/cli' -ForegroundColor Yellow`,
+    `  exit 1`,
+    `}`,
+    ``,
+    `$plat = $env:CHADCODE_PLATFORM`,
+    `if (-not $plat) {`,
+    `  $arch = $env:PROCESSOR_ARCHITECTURE`,
+    `  if ($arch -eq 'ARM64') { $plat = 'windows-arm64' } else { $plat = 'windows-x64' }`,
+    `}`,
+    ``,
+    `$installDir = Join-Path $env:LOCALAPPDATA 'ChadCode'`,
+    `$binary = Join-Path $installDir 'chadcode.exe'`,
+    `New-Item -ItemType Directory -Force -Path $installDir | Out-Null`,
+    ``,
+    `Write-Host "Downloading $plat binary..." -ForegroundColor Cyan`,
+    `$headers = @{ Authorization = "Bearer $env:CHADCODE_LICENSE" }`,
+    `try {`,
+    `  Invoke-WebRequest -UseBasicParsing -Headers $headers -Uri "${self}/download?platform=$plat" -OutFile $binary`,
+    `} catch {`,
+    `  Write-Host "Download failed. If the server returned 404 the binary for $plat hasn't been uploaded yet — tell the founder." -ForegroundColor Red`,
+    `  Write-Host $_.Exception.Message -ForegroundColor Red`,
+    `  exit 1`,
+    `}`,
+    ``,
+    `# Add to user PATH if not already there.`,
+    `$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')`,
+    `if ($userPath -notlike "*$installDir*") {`,
+    `  [Environment]::SetEnvironmentVariable('Path', "$userPath;$installDir", 'User')`,
+    `  Write-Host "Added $installDir to your user PATH." -ForegroundColor Green`,
+    `  Write-Host 'Restart your terminal (PowerShell / Windows Terminal) to pick up the change.' -ForegroundColor Yellow`,
+    `}`,
+    ``,
+    `Write-Host "Installed: $binary" -ForegroundColor Green`,
+    `Write-Host "Run: chadcode" -ForegroundColor Green`,
+    ``,
+  ].join("\r\n");
+  return new Response(script, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'no-store',
+      ...CORS,
+    },
+  });
+}
+
+// ---------- /install.sh ----------
+// macOS + Linux companion so the Windows button isn't the only
+// command-based install path. Same contract — CHADCODE_LICENSE in env,
+// optional CHADCODE_PLATFORM override.
+function installSh(request, env) {
+  const self = new URL(request.url).origin;
+  const script = [
+    `#!/usr/bin/env bash`,
+    `# ChadCode installer for macOS + Linux.`,
+    `# Usage:`,
+    `#   CHADCODE_LICENSE=<key> bash -c "$(curl -fsSL ${self}/install.sh)"`,
+    ``,
+    `set -euo pipefail`,
+    ``,
+    `if [ -z "\${CHADCODE_LICENSE:-}" ]; then`,
+    `  echo "ERROR: set CHADCODE_LICENSE=<key> before running the installer." >&2`,
+    `  echo "Get your key at https://chadgpt-964.pages.dev/cli" >&2`,
+    `  exit 1`,
+    `fi`,
+    ``,
+    `plat="\${CHADCODE_PLATFORM:-}"`,
+    `if [ -z "$plat" ]; then`,
+    `  os="$(uname -s | tr '[:upper:]' '[:lower:]')"`,
+    `  arch="$(uname -m)"`,
+    `  case "$os" in darwin) os=darwin ;; linux) os=linux ;; *) echo "unsupported OS: $os" >&2; exit 1 ;; esac`,
+    `  case "$arch" in x86_64|amd64) arch=x64 ;; arm64|aarch64) arch=arm64 ;; *) echo "unsupported arch: $arch" >&2; exit 1 ;; esac`,
+    `  plat="$os-$arch"`,
+    `fi`,
+    ``,
+    `install_dir="$HOME/.local/bin"`,
+    `mkdir -p "$install_dir"`,
+    `binary="$install_dir/chadcode"`,
+    ``,
+    `echo "Downloading $plat binary..."`,
+    `if ! curl -fsSL -H "Authorization: Bearer $CHADCODE_LICENSE" "${self}/download?platform=$plat" -o "$binary"; then`,
+    `  echo "Download failed. If the server returned 404 the binary for $plat hasn't been uploaded yet — tell the founder." >&2`,
+    `  exit 1`,
+    `fi`,
+    `chmod +x "$binary"`,
+    ``,
+    `echo "Installed: $binary"`,
+    `case ":$PATH:" in`,
+    `  *":$install_dir:"*) ;;`,
+    `  *) echo "NOTE: $install_dir is not on your PATH yet. Add this to your shell rc:" ; echo "  export PATH=\\\"$install_dir:\\$PATH\\\"" ;;`,
+    `esac`,
+    `echo "Run: chadcode"`,
+    ``,
+  ].join("\n");
+  return new Response(script, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'no-store',
+      ...CORS,
     },
   });
 }

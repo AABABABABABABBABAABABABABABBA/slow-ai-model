@@ -54,8 +54,8 @@
       <div class="plat"><div><div class="name">macOS Intel</div><p class="sub">darwin-x64</p></div><a class="btn" href="#" data-plat="darwin-x64">Download</a></div>
       <div class="plat"><div><div class="name">Linux x64</div><p class="sub">linux-x64</p></div><a class="btn" href="#" data-plat="linux-x64">Download</a></div>
       <div class="plat"><div><div class="name">Linux arm64</div><p class="sub">linux-arm64</p></div><a class="btn" href="#" data-plat="linux-arm64">Download</a></div>
-      <div class="plat"><div><div class="name">Windows x64</div><p class="sub">windows-x64</p></div><a class="btn" href="#" data-plat="windows-x64">Download</a></div>
-      <div class="plat"><div><div class="name">Windows arm64</div><p class="sub">windows-arm64</p></div><a class="btn" href="#" data-plat="windows-arm64">Download</a></div>
+      <div class="plat"><div><div class="name">Windows x64</div><p class="sub">windows-x64</p></div><a class="btn" href="#" data-plat="windows-x64" data-install="powershell">Install command</a></div>
+      <div class="plat"><div><div class="name">Windows arm64</div><p class="sub">windows-arm64</p></div><a class="btn" href="#" data-plat="windows-arm64" data-install="powershell">Install command</a></div>
     </div>
     <p class="sub" style="margin-top:12px">Each download requires your license key in the <code>Authorization: Bearer</code> header. The server streams the signed binary from Cloudflare R2 after verifying the license is active.</p>
   </div>
@@ -112,8 +112,51 @@ async function init() {
     const plat = btn.getAttribute('data-plat');
     const key = sessionStorage.getItem('chadcode_key');
     if (!key) { alert('Generate a license key in step 1 first.'); return; }
+    if (btn.getAttribute('data-install') === 'powershell') {
+      showInstallCommand(plat, key, btn);
+      return;
+    }
     downloadBinary(plat, key, btn);
   }));
+}
+
+// Windows path: skip the binary fetch entirely (it's gated to an installed
+// R2 artifact, which 404s if the founder hasn't uploaded one for this
+// platform). Instead, reveal a copy-and-paste PowerShell one-liner that
+// runs the install script against the same gateway and bakes the license
+// key in as an env var for the session.
+function showInstallCommand(plat, key, btn) {
+  const row = btn.closest('.plat');
+  if (!row) return;
+  // Already expanded? Collapse back.
+  if (row.querySelector('.install_wrap')) {
+    row.querySelector('.install_wrap').remove();
+    btn.textContent = 'Install command';
+    return;
+  }
+  const host = 'https://chadcode-license.corbyiscool.workers.dev';
+  const cmd = `$env:CHADCODE_LICENSE='${key}'; $env:CHADCODE_PLATFORM='${plat}'; iwr -useb ${host}/install.ps1 | iex`;
+  const wrap = document.createElement('div');
+  wrap.className = 'install_wrap';
+  wrap.style.cssText = 'flex-basis:100%; margin-top:10px; padding:10px 12px; background:var(--bg); border:1px solid var(--border); border-radius:8px;';
+  wrap.innerHTML = `
+    <div style="font-size:11px; color:var(--muted); margin-bottom:6px;">Paste in <b>PowerShell</b> (not cmd). Admin not required.</div>
+    <pre style="margin:0; white-space:pre-wrap; word-break:break-all; font-size:11.5px;">${cmd}</pre>
+    <div style="margin-top:8px; display:flex; gap:6px;">
+      <button class="btn" style="padding:4px 10px; font-size:11.5px;" data-copy>Copy</button>
+      <a class="btn ghost" style="padding:4px 10px; font-size:11.5px;" href="${host}/install.ps1" target="_blank" rel="noopener">View script</a>
+    </div>
+    <div style="font-size:11px; color:var(--muted); margin-top:8px; line-height:1.5;">
+      The script fetches the signed <code>${plat}</code> binary from R2 and drops it in <code>%LOCALAPPDATA%\\ChadCode\\chadcode.exe</code>, then adds that folder to your user PATH. Restart your terminal and run <code>chadcode</code>.
+    </div>`;
+  row.appendChild(wrap);
+  btn.textContent = 'Hide command';
+  wrap.querySelector('[data-copy]').addEventListener('click', async (ev) => {
+    const copyBtn = ev.currentTarget;
+    try { await navigator.clipboard.writeText(cmd); copyBtn.textContent = 'Copied ✓'; }
+    catch { /* fallback — select pre */ const r = document.createRange(); r.selectNode(wrap.querySelector('pre')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); copyBtn.textContent = 'Press ⌘/Ctrl+C'; }
+    setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1800);
+  });
 }
 
 async function generateLicense() {
