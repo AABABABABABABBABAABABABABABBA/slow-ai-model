@@ -865,6 +865,19 @@ function submit() {
     runImageTurn(imageIntent, { isDupe });
     return;
   }
+
+  // /avatar <system prompt>  — generates an avatar for an AI assistant.
+  // Chains chat (concept) -> flux (render), both server-side.
+  const avatarMatch = text.match(/^\/avatar(?:\s+(.+))?$/is);
+  if (avatarMatch) {
+    const sys = (avatarMatch[1] || '').trim();
+    if (!sys) {
+      toast({ title: '/avatar <paste a system prompt>', sub: 'I turn it into a matching square avatar.' }, 4000, 'warn');
+      return;
+    }
+    runAvatarTurn(sys, { isDupe });
+    return;
+  }
   runChatTurn(text || 'Describe this image.', atts, { isDupe });
 }
 
@@ -1284,6 +1297,72 @@ function addMessageActions(container, text, opts = {}) {
 }
 
 // ---------- image turn ------------------
+async function runAvatarTurn(systemPrompt, opts) {
+  busy = true;
+  setSendMode('stop');
+  const preview = systemPrompt.length > 120 ? systemPrompt.slice(0, 117) + '…' : systemPrompt;
+  ensureChat('/avatar ' + preview);
+  const isDupe = !!(opts && opts.isDupe);
+  history.push({ role: 'user', content: '/avatar ' + preview });
+  if (activeChatObj) { activeChatObj.messages = history.slice(); saveState(); }
+  addUserMsgEl('/avatar ' + preview, history.length - 1, null);
+
+  const botRow = document.createElement('div');
+  botRow.className = 'msg_row bot';
+  const body = document.createElement('div');
+  body.className = 'bot_body';
+  body.innerHTML = '<div class="thinking"><span class="thinking_dot"></span><span class="thinking_text">Designing the avatar concept…</span></div>';
+  botRow.appendChild(body);
+  inner.appendChild(botRow);
+  scrollDown(true);
+
+  currentAbort = new AbortController();
+  let errText = null;
+  let promptUsed = '';
+  let imageUrl = '';
+  try {
+    const res = await apiFetch('/avatar', {
+      method: 'POST',
+      body: JSON.stringify({ system_prompt: systemPrompt }),
+      signal: currentAbort.signal,
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      errText = j.error || `avatar failed (${res.status})`;
+    } else {
+      promptUsed = j.prompt_used || '';
+      imageUrl = 'data:' + (j.mime || 'image/png') + ';base64,' + j.image_b64;
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') errText = e.message || 'request failed';
+  }
+  currentAbort = null;
+
+  if (errText) {
+    body.innerHTML = renderMd('**Error:** ' + errText);
+  } else {
+    body.innerHTML = `
+      <div class="gen_image">
+        <div class="gen_image_frame"><img src="${imageUrl}" alt="Generated avatar"></div>
+        <div class="gen_image_caption"><span class="cap">${escapeHtml(promptUsed)}</span></div>
+      </div>
+    `;
+  }
+  addMessageActions(body, errText || promptUsed, { model: 'flux' });
+
+  const stored = errText ? ('Error: ' + errText) : promptUsed;
+  history.push({ role: 'assistant', content: stored, imageUrl: errText ? undefined : imageUrl });
+  if (activeChatObj) { activeChatObj.messages = history.slice(); saveState(); }
+
+  const spentTokens = estimateTokens(systemPrompt) + estimateTokens(promptUsed || '');
+  deductUsage(spentTokens, isDupe);
+  renderChatMeter();
+
+  busy = false;
+  setSendMode('send');
+  input.focus();
+}
+
 // Returns the cleaned image prompt if the text asks for an image, else null.
 // Matches: "/image X", "draw X", "make/create/generate a picture/image of X",
 // "image of X", "picture of X", "render X", "sketch X".
