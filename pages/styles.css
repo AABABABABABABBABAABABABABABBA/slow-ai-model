@@ -47,13 +47,25 @@ html, body {
 body {
   background: var(--bg); color: var(--fg); font-family: var(--sans);
   font-size: 16px; line-height: 1.5;
-  display: grid; grid-template-columns: 260px 1fr; min-width: 0;
+  display: grid; grid-template-columns: 260px 1fr;
+  grid-template-rows: 100svh;       /* lock the grid row to viewport */
+  min-width: 0;
+  overflow: hidden;                  /* nothing in body can push us past viewport */
 }
 img { max-width: 100%; }
 [hidden] { display: none !important; }
 
 aside {
   background: var(--sidebar); display: flex; flex-direction: column; min-width: 0;
+  /* Lock aside to the actual visible viewport so chat content (or a long
+     chat list during streaming) can't push the profile button below the
+     fold. 100svh beats 100vh because iOS Safari's vh uses the largest
+     viewport (URL bar hidden), which would hide the bottom buttons. */
+  height: 100vh;
+  height: 100svh;
+  max-height: 100svh;
+  overflow: hidden;
+  position: sticky; top: 0;      /* harmless inside the body grid on desktop */
 }
 .sb_top {
   padding: 10px;
@@ -187,7 +199,13 @@ aside {
 }
 .sidebar_scrim.show { opacity: 1; pointer-events: auto; }
 
-.chat { display: flex; flex-direction: column; min-width: 0; position: relative; }
+.chat {
+  display: flex; flex-direction: column; min-width: 0; position: relative;
+  height: 100vh;
+  height: 100svh;
+  max-height: 100svh;
+  overflow: hidden;
+}
 header {
   position: sticky; top: 0; background: var(--bg);
   padding: 8px 12px;
