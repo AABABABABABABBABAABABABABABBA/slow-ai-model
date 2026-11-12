@@ -2308,50 +2308,131 @@ function closeModal() {
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
 
 function openSettings() {
-  openModal('Settings', (p) => {
-    p.innerHTML = `
-      <div class="setting_row">
-        <div><div class="setting_label">Theme</div></div>
-        <div class="setting_ctrl"><select id="theme_sel"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></div>
-      </div>
-      <div class="setting_row">
-        <div><div class="setting_label">Chad Mode</div><div class="setting_sub">Direct, no corporate hedging, no CSAM/minors/porn ever</div></div>
-        <button class="toggle ${state.settings.chadMode?'on':''}" data-k="chadMode"></button>
-      </div>
-      <div class="setting_row">
-        <div><div class="setting_label">Block jailbreak attempts</div><div class="setting_sub">DAN, ignore-previous, [SYSTEM], grandma, etc. Always on, cannot be disabled. Enforced client-side AND server-side.</div></div>
-        <div style="font-family:var(--mono);font-size:12px;color:var(--ok);font-weight:600">LOCKED ON</div>
-      </div>
-      <div class="setting_row">
-        <div><div class="setting_label">Auto scroll</div></div>
-        <button class="toggle ${state.settings.autoScroll?'on':''}" data-k="autoScroll"></button>
-      </div>
-      <div class="setting_row">
-        <div><div class="setting_label">Account</div><div class="setting_sub">${currentUser?.email || 'not signed in'} · ${currentUser?.plan || 'free'}</div></div>
-        <div style="display:flex;gap:6px">
-          <button class="btn_primary" id="pw_btn" style="background:transparent;color:var(--fg);border:1px solid var(--border)">Change password</button>
-          <button class="btn_primary" id="logout_btn" style="background:transparent;color:var(--fg);border:1px solid var(--border)">Log out</button>
-        </div>
-      </div>
-    `;
-    p.querySelector('#theme_sel').value = state.theme;
-    p.querySelector('#theme_sel').addEventListener('change', (e) => { state.theme = e.target.value; applyTheme(); });
-    p.querySelectorAll('.toggle').forEach(t => t.addEventListener('click', () => {
-      const k = t.getAttribute('data-k');
-      state.settings[k] = !state.settings[k];
-      t.classList.toggle('on');
-      saveState();
-    }));
-    const lo = p.querySelector('#logout_btn');
-    if (lo) lo.addEventListener('click', async () => {
-      await doLogout();
-      closeModal();
-      showAuthGate('login');
-    });
-    const pw = p.querySelector('#pw_btn');
-    if (pw) pw.addEventListener('click', () => { closeModal(); openChangePasswordModal(); });
+  // Fully custom scrim — bypasses openModal() so we can own every pixel of
+  // the Apple-style chrome (title row, close button, section layout).
+  modalRoot.innerHTML = '';
+  const s = document.createElement('div');
+  s.className = 'scrim show ios-settings_scrim';
+  s.innerHTML = renderIosSettings();
+  modalRoot.appendChild(s);
+
+  const close = () => { modalRoot.innerHTML = ''; };
+  s.addEventListener('mousedown', (e) => { if (e.target === s) close(); });
+  s.querySelector('#ios_close').addEventListener('click', close);
+
+  // Theme segmented control.
+  s.querySelectorAll('[data-theme]').forEach(seg => seg.addEventListener('click', () => {
+    const v = seg.getAttribute('data-theme');
+    state.theme = v; applyTheme(); saveState();
+    s.querySelectorAll('[data-theme]').forEach(x => x.classList.toggle('on', x === seg));
+  }));
+
+  // iOS-style toggles for chadMode + autoScroll.
+  s.querySelectorAll('.ios_toggle[data-k]').forEach(t => t.addEventListener('click', () => {
+    const k = t.getAttribute('data-k');
+    state.settings[k] = !state.settings[k];
+    t.classList.toggle('on', !!state.settings[k]);
+    t.setAttribute('aria-checked', String(!!state.settings[k]));
+    saveState();
+  }));
+
+  s.querySelector('#ios_change_pw').addEventListener('click', () => { close(); openChangePasswordModal(); });
+  s.querySelector('#ios_logout').addEventListener('click', async () => {
+    await doLogout();
+    close();
+    showAuthGate('login');
   });
 }
+
+function renderIosSettings() {
+  const email = currentUser?.email || 'not signed in';
+  const plan = currentUser?.plan || 'free';
+  const planLabel = plan === 'plus' ? 'Plus plan'
+                 : plan === 'unlimited' ? 'Unlimited'
+                 : 'Free plan';
+  const initial = (email[0] || '?').toUpperCase();
+  const theme = state.theme;
+  const chadOn = state.settings.chadMode;
+  const autoOn = state.settings.autoScroll;
+
+  return `
+    <div class="ios_modal">
+      <div class="ios_head">
+        <div class="ios_title">Settings</div>
+        <button class="ios_close_btn" id="ios_close" aria-label="close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/></svg>
+        </button>
+      </div>
+
+      <div class="ios_body">
+        <div class="ios_section_label">Appearance</div>
+        <div class="ios_group">
+          <div class="ios_row">
+            <div class="ios_row_text">Theme</div>
+            <div class="ios_seg">
+              <button class="ios_seg_opt ${theme === 'light' ? 'on' : ''}" data-theme="light">Light</button>
+              <button class="ios_seg_opt ${theme === 'dark' ? 'on' : ''}" data-theme="dark">Dark</button>
+              <button class="ios_seg_opt ${theme === 'system' ? 'on' : ''}" data-theme="system">System</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="ios_section_label">Behavior</div>
+        <div class="ios_group">
+          <div class="ios_row">
+            <div class="ios_row_text">
+              <div>Chad Mode</div>
+              <div class="ios_sub">Direct answers, no corporate hedging. No CSAM, minors, or porn — ever.</div>
+            </div>
+            <button class="ios_toggle ${chadOn ? 'on' : ''}" data-k="chadMode" role="switch" aria-checked="${chadOn}">
+              <span class="ios_knob"></span>
+            </button>
+          </div>
+          <div class="ios_divider"></div>
+          <div class="ios_row">
+            <div class="ios_row_text">Auto Scroll</div>
+            <button class="ios_toggle ${autoOn ? 'on' : ''}" data-k="autoScroll" role="switch" aria-checked="${autoOn}">
+              <span class="ios_knob"></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="ios_section_label">Safety</div>
+        <div class="ios_group">
+          <div class="ios_row ios_row_static">
+            <div class="ios_row_text">Jailbreak Protection</div>
+            <div class="ios_locked">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              <span>Always On</span>
+            </div>
+          </div>
+        </div>
+        <div class="ios_note">Blocks DAN, "ignore previous", fake [SYSTEM] tags, roleplay exploits and similar. Enforced on device and on our servers. Can't be disabled.</div>
+
+        <div class="ios_section_label">Account</div>
+        <div class="ios_group">
+          <div class="ios_row ios_row_static">
+            <div class="ios_avatar">${escapeHtml(initial)}</div>
+            <div class="ios_row_text" style="flex:1;margin-left:12px">
+              <div>${escapeHtml(email)}</div>
+              <div class="ios_sub">${escapeHtml(planLabel)}</div>
+            </div>
+          </div>
+          <div class="ios_divider"></div>
+          <button class="ios_row ios_row_btn ios_action_primary" id="ios_change_pw">
+            <span>Change Password</span>
+            <svg class="ios_chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+          <div class="ios_divider"></div>
+          <button class="ios_row ios_row_btn ios_action_destructive" id="ios_logout">
+            <span>Log Out</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 
 function openChangePasswordModal() {
   openModal('Change password', (p) => {
