@@ -32,6 +32,7 @@ export default {
       if (url.pathname === '/download'         && request.method === 'GET')   return downloadBinary(request, env);
       if (url.pathname === '/install.ps1'      && request.method === 'GET')   return installPs1(request, env);
       if (url.pathname === '/install.sh'       && request.method === 'GET')   return installSh(request, env);
+      if (url.pathname === '/opencode-config.jsonc' && request.method === 'GET') return opencodeConfig(request, env);
       if (url.pathname === '/update/check'     && request.method === 'GET')   return updateCheck(request, env);
       if (url.pathname === '/update/publish'   && request.method === 'POST')  return updatePublish(request, env);
       if (url.pathname === '/health')                                          return j({ ok: true, service: 'chadcode-license', ts: Date.now() });
@@ -272,13 +273,45 @@ function installPs1(request, env) {
     `  exit 1`,
     `}`,
     ``,
-    `# Add to user PATH if not already there.`,
+    `# Verify the download is actually a Windows PE and matches this box's`,
+    `# architecture. The last incident: someone chose CHADCODE_PLATFORM=`,
+    `# windows-arm64 while running x64 Windows — the binary ran straight`,
+    `# into "not a valid application for this OS platform". Catch that here`,
+    `# instead of leaving a broken exe on disk.`,
+    `$head = [System.IO.File]::ReadAllBytes($binary) | Select-Object -First 512`,
+    `$fileLen = (Get-Item $binary).Length`,
+    `if ($head.Length -lt 64 -or $head[0] -ne 0x4D -or $head[1] -ne 0x5A) {`,
+    `  Write-Host "Downloaded file is NOT a Windows executable ($fileLen bytes, first 2 bytes not MZ)." -ForegroundColor Red`,
+    `  Write-Host "Likely the server returned an error body. Check your license key or that the $plat build is uploaded to R2." -ForegroundColor Yellow`,
+    `  Remove-Item $binary -Force`,
+    `  exit 1`,
+    `}`,
+    `$peOff = [BitConverter]::ToUInt32($head, 0x3C)`,
+    `if ($peOff -gt 0 -and $peOff + 6 -lt $head.Length -and $head[$peOff] -eq 0x50 -and $head[$peOff+1] -eq 0x45) {`,
+    `  $machine = [BitConverter]::ToUInt16($head, $peOff + 4)`,
+    `  $arch = $env:PROCESSOR_ARCHITECTURE`,
+    `  $wantMachine = if ($arch -eq 'ARM64') { 0xAA64 } elseif ($arch -eq 'AMD64' -or $arch -eq 'x64') { 0x8664 } else { 0 }`,
+    `  if ($wantMachine -ne 0 -and $machine -ne $wantMachine) {`,
+    `    $machineName = switch ($machine) { 0x014c {'x86 32-bit'} 0x8664 {'AMD64 (windows-x64)'} 0xAA64 {'ARM64 (windows-arm64)'} default {'unknown 0x' + $machine.ToString('X4')} }`,
+    `    Write-Host "Architecture mismatch: your CPU is $arch but the downloaded binary targets $machineName." -ForegroundColor Red`,
+    `    $wantPlat = if ($arch -eq 'ARM64') { 'windows-arm64' } else { 'windows-x64' }`,
+    `    Write-Host ('Re-run with:  $env:CHADCODE_PLATFORM=''' + $wantPlat + ''' then try the installer again.') -ForegroundColor Yellow`,
+    `    Remove-Item $binary -Force`,
+    `    exit 1`,
+    `  }`,
+    `}`,
+    ``,
+    `# Add to user PATH if not already there, and refresh the CURRENT`,
+    `# session's $env:Path so 'chadcode' works right away without restart.`,
     `$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')`,
     `if ($userPath -notlike "*$installDir*") {`,
     `  [Environment]::SetEnvironmentVariable('Path', "$userPath;$installDir", 'User')`,
     `  Write-Host "Added $installDir to your user PATH." -ForegroundColor Green`,
-    `  Write-Host 'Restart your terminal (PowerShell / Windows Terminal) to pick up the change.' -ForegroundColor Yellow`,
     `}`,
+    `# Refresh this session's PATH so the new binary is callable right now.`,
+    `$machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')`,
+    `$userPathNow = [Environment]::GetEnvironmentVariable('Path', 'User')`,
+    `$env:Path = "$machinePath;$userPathNow"`,
     ``,
     ``,
     `# Register the chadcode:// protocol handler so the browser "Open ChadCode?"`,
@@ -292,8 +325,25 @@ function installPs1(request, env) {
     `Set-ItemProperty -Path (Join-Path $proto 'shell\\open\\command') -Name '(Default)' -Value ('\"' + $binary + '\" login --url \"%1\"')`,
     `Write-Host 'Registered chadcode:// URL handler.' -ForegroundColor Green`,
     ``,
+    ``,
+    `# First-run config: drop ChadGPT provider definition if the user`,
+    `# doesn't already have an opencode.jsonc. Never overwrite.`,
+    `$configDir = Join-Path $env:APPDATA 'opencode'`,
+    `$configFile = Join-Path $configDir 'opencode.jsonc'`,
+    `if (-not (Test-Path $configFile)) {`,
+    `  New-Item -ItemType Directory -Force -Path $configDir | Out-Null`,
+    `  try {`,
+    `    Invoke-WebRequest -UseBasicParsing -Uri '${self}/opencode-config.jsonc' -OutFile $configFile`,
+    `    Write-Host "Installed default ChadGPT config at $configFile" -ForegroundColor Green`,
+    `  } catch {`,
+    `    Write-Host "Could not fetch default config — chadcode will still run but models may be missing." -ForegroundColor DarkYellow`,
+    `  }`,
+    `}`,
+    ``,
+    `Write-Host ""`,
     `Write-Host "Installed: $binary" -ForegroundColor Green`,
-    `Write-Host "Run: chadcode" -ForegroundColor Green`,
+    `Write-Host "Run:   chadcode" -ForegroundColor Green`,
+    `Write-Host "       (or use the full path: & '$binary' — in case PATH refresh didn't take)" -ForegroundColor DarkGray`,
     ``,
   ].join("\r\n");
   return new Response(script, {
@@ -402,6 +452,19 @@ function installSh(request, env) {
     `    fi`,
     `    ;;`,
     `esac`,
+    ``,
+    `# First-run config: drop ChadGPT provider definition if missing.`,
+    `config_dir="$HOME/.config/opencode"`,
+    `config_file="$config_dir/opencode.jsonc"`,
+    `if [ ! -f "$config_file" ]; then`,
+    `  mkdir -p "$config_dir"`,
+    `  if curl -fsSL "${self}/opencode-config.jsonc" -o "$config_file"; then`,
+    `    echo "Installed default ChadGPT config at $config_file"`,
+    `  else`,
+    `    echo "NOTE: could not fetch default config — chadcode will still run but models may be missing."`,
+    `  fi`,
+    `fi`,
+    ``,
     `echo "Run: chadcode"`,
     ``,
   ].join("\n");
@@ -412,6 +475,49 @@ function installSh(request, env) {
       'Cache-Control': 'no-store',
       ...CORS,
     },
+  });
+}
+
+// ---------- /opencode-config.jsonc ----------
+// Serves the ChadCode-flavored opencode config so installers can write it
+// to the user's config dir without bundling the full JSON in the install
+// script. Kept here because this worker already serves install.ps1/sh.
+function opencodeConfig(request, env) {
+  const body = `// ChadCode default config. Replace with your own at:
+//   Linux/mac: ~/.config/opencode/opencode.jsonc
+//   Windows:   %APPDATA%\\opencode\\opencode.jsonc
+// Only ChadGPT provider is registered — third-party providers are
+// intentionally excluded in this build.
+{
+  "$schema": "https://opencode.ai/config.json",
+  "theme": "chadcode",
+  "autoshare": false,
+  "autoupdate": false,
+  "provider": {
+    "chadgpt": {
+      "name": "ChadGPT",
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "baseURL": "https://chadgpt-964.pages.dev/v1",
+        "apiKey": "{env:CHADCODE_LICENSE}"
+      },
+      "models": {
+        "chadgpt-fast":   { "name": "ChadGPT Fast (free)",   "limit": { "context": 8192,  "output": 4096 }, "tool_call": true },
+        "chadgpt-small":  { "name": "ChadGPT Small (free)",  "limit": { "context": 8192,  "output": 4096 }, "tool_call": true },
+        "chadgpt-tiny":   { "name": "ChadGPT Tiny (free)",   "limit": { "context": 4096,  "output": 2048 }, "tool_call": true },
+        "chadgpt-pro":    { "name": "ChadGPT Pro (Plus)",    "limit": { "context": 8192,  "output": 4096 }, "tool_call": true },
+        "chadgpt-coder":  { "name": "ChadCoder (Plus)",      "limit": { "context": 16384, "output": 8192 }, "tool_call": true },
+        "chadgpt-ultra":  { "name": "ChadGPT Ultra (Plus)",  "limit": { "context": 32768, "output": 8192 }, "tool_call": true }
+      }
+    }
+  },
+  "model": "chadgpt/chadgpt-fast",
+  "small_model": "chadgpt/chadgpt-small"
+}
+`;
+  return new Response(body, {
+    status: 200,
+    headers: { 'Content-Type': 'application/jsonc; charset=utf-8', 'Cache-Control': 'no-store', ...CORS },
   });
 }
 

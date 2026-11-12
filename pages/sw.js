@@ -4,7 +4,7 @@
 // Bumping this version tells browsers to drop the old cached shell on
 // their next load. Bump it whenever a deploy needs to blow away stale
 // cached JS/CSS on existing installs.
-const CACHE = 'chadgpt-shell-v13';
+const CACHE = 'chadgpt-shell-v14';
 const SHELL = [
   '/',
   '/app.js',

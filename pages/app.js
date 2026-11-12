@@ -873,7 +873,19 @@ function submit() {
   // of X", "image of Y", "render Z", etc. Also accepts the explicit
   // /image command. If the intent fires, strip the trigger phrase so the
   // model gets the subject, not the verb.
-  const imageIntent = detectImageIntent(text);
+  //
+  // Sticky mode: once a user successfully generates an image, we stay in
+  // image mode for 10 minutes. During that window, short refinement lines
+  // ("make it bigger", "not like that, try a dog", "redo in blue") get
+  // treated as follow-ups on the last image prompt instead of falling
+  // through to chat (which would just refuse with "I can't generate
+  // images"). Explicit exits: user types "stop images", "chat", or sends
+  // a clearly non-image question.
+  let imageIntent = detectImageIntent(text);
+  if (!imageIntent && isImageSticky() && !looksLikeImageExit(text)) {
+    const refined = detectImageRefinement(text, state._lastImagePrompt);
+    if (refined) imageIntent = refined;
+  }
 
   if (imageIntent) {
     const isPaid = state.plan === 'plus' || state.plan === 'unlimited';
@@ -881,6 +893,12 @@ function submit() {
       openPaywallModal('Image generation is a Plus feature');
       return;
     }
+  }
+
+  // User explicitly asked to leave image mode.
+  if (isImageSticky() && looksLikeImageExit(text)) {
+    state._imageStickyUntil = 0;
+    toast({ title: 'Leaving image mode — back to chat.' }, 2000, 'ok');
   }
 
   const isDupe = isDuplicateMessage(text);
@@ -923,7 +941,72 @@ function submit() {
     return;
   }
 
+  // Artifact: full-site generation. Triggers:
+  //   - /artifact <prompt>   — explicit command
+  //   - natural language: "build/make/create/design me a (website|site|
+  //     landing page|portfolio|page) [that/about/...]"
+  //   - follow-up "build it" / "deploy it" / "ship it for real" when the
+  //     last assistant turn was an artifact card
+  const artIntent = detectArtifactIntent(text, atts);
+  if (artIntent === 'build_last') {
+    const last = findLastArtifact();
+    if (last) { runArtifactBuild(last.id, last.title); return; }
+    // No prior artifact — fall through to normal chat so the model can
+    // say "build what?".
+  } else if (artIntent) {
+    runArtifactTurn(artIntent.prompt, artIntent.refs, { isDupe });
+    return;
+  }
+
   runChatTurn(text || 'Describe this image.', atts, { isDupe });
+}
+
+// Detect an artifact ask. Returns:
+//   'build_last'                  — the user wants to deploy the most recent artifact
+//   { prompt, refs, oneOf? }      — the user wants to generate a new artifact
+//   null                          — not an artifact ask
+function detectArtifactIntent(text, atts) {
+  if (!text) return null;
+  const t = text.trim();
+
+  // Explicit command
+  const cmd = t.match(/^\/artifact(?:\s+([\s\S]+))?$/i);
+  if (cmd) {
+    const p = (cmd[1] || '').trim();
+    if (!p) return null;
+    return { prompt: p, refs: imagesFromAtts(atts), oneOf: imagesFromAtts(atts).length > 0 };
+  }
+
+  // Build-last follow-up — short imperatives like "build it", "ship it",
+  // "deploy it for real", "make it real" only count when the previous
+  // assistant turn in the active chat was an artifact card.
+  if (/^(build|deploy|ship|publish|make)\s+(it|this|that)\s*(for\s+real|live|please)?[.!?]*$/i.test(t)) {
+    return 'build_last';
+  }
+
+  // Natural-language site build: "(build|make|create|design) me a
+  // (website|site|landing page|portfolio|page) about X". The leading verb
+  // must be imperative (not "I would like you to…"), which is captured
+  // tightly here to keep normal chat alone.
+  const nl = t.match(/^(?:please\s+)?(build|make|create|design|generate|whip\s+up|code)\s+(?:me\s+)?(?:a|an|the)?\s*(website|site|webpage|web\s+page|landing\s+page|portfolio|page|app|dashboard|form)\b[\s\S]*/i);
+  if (nl) return { prompt: t, refs: imagesFromAtts(atts), oneOf: imagesFromAtts(atts).length > 0 };
+
+  return null;
+}
+
+function imagesFromAtts(atts) {
+  if (!Array.isArray(atts)) return [];
+  return atts.filter((a) => a && (a.kind === 'image' || /^image\//.test(a.mime || ''))).map((a) => a.dataUrl || a.url).filter(Boolean).slice(0, 4);
+}
+
+function findLastArtifact() {
+  const active = state.chats.find((c) => c.id === state.activeChatId);
+  if (!active) return null;
+  for (let i = active.messages.length - 1; i >= 0; i--) {
+    const m = active.messages[i];
+    if (m.role === 'assistant' && m.artifact) return m.artifact;
+  }
+  return null;
 }
 
 // Detect an obfuscation ask. Returns { source } if the message is clearly
@@ -1541,6 +1624,78 @@ function detectImageIntent(text) {
   return null;
 }
 
+// True iff the user is inside the sticky window after a recent image gen.
+function isImageSticky() {
+  return !!state._imageStickyUntil && Date.now() < state._imageStickyUntil;
+}
+
+// Explicit "get me out of image mode" signals. Keep tight — we don't want
+// normal chat turns to accidentally exit sticky.
+function looksLikeImageExit(text) {
+  if (!text) return false;
+  const t = text.trim().toLowerCase();
+  return /^(stop\s+(images?|generating|drawing)|exit\s+image|back\s+to\s+chat|chat\s+mode|no\s+more\s+images?|done\s+(with\s+)?images?)[.!]?$/.test(t);
+}
+
+// In sticky mode, interpret a short line as a refinement of the last
+// image prompt. Returns the full new prompt to send, or null if the line
+// doesn't look like a refinement.
+//
+// Patterns we catch:
+//   "that's not X"                → remove X, re-prompt base
+//   "no X, try Y" / "not X, Y"    → replace X with Y
+//   "make it Y" / "add Y"         → append "Y"
+//   "redo" / "again" / "retry"    → re-run the exact same prompt
+//   "in blue" / "but as a cat"    → append style/subject hint
+//   short free text ≤ 80 chars    → treat as additive refinement
+function detectImageRefinement(text, lastPrompt) {
+  if (!text || !lastPrompt) return null;
+  const t = text.trim();
+  if (!t) return null;
+
+  // Hard reject: anything that sounds like a general question goes to chat.
+  if (/^(what|why|how|when|where|who|is|are|do|does|did|can|could|should|would)\b.*\?$/i.test(t)) return null;
+  if (/^(tell\s+me|explain|describe|summarize|translate|calculate|compute|code|write\s+code)\b/i.test(t)) return null;
+
+  // Pure redo.
+  if (/^(redo|retry|again|try\s+again|regenerate|another|one\s+more)[.!?]*$/i.test(t)) {
+    return lastPrompt;
+  }
+
+  // "that's not X" / "not X" — treat as a negative constraint on the last prompt.
+  const neg = t.match(/^(?:that'?s\s+not|not|it'?s\s+not)\s+(.+?)[.!?]*$/i);
+  if (neg) {
+    return `${lastPrompt}. Avoid: ${neg[1].trim()}`;
+  }
+
+  // "no X, try/do Y" / "not X, Y"
+  const swap = t.match(/^(?:no|not)\s+(.+?)[,.\-\s]+(?:try|do|make\s+it|instead)\s+(.+?)[.!?]*$/i);
+  if (swap) {
+    return `${lastPrompt}. Replace "${swap[1].trim()}" with "${swap[2].trim()}"`;
+  }
+
+  // "make it Y" / "make the X Y" / "add Y"
+  const add = t.match(/^(?:make\s+it|make\s+them|add|put|include|give\s+it)\s+(.+?)[.!?]*$/i);
+  if (add) {
+    return `${lastPrompt}, ${add[1].trim()}`;
+  }
+
+  // Short prepositional hints: "in blue", "as a cat", "with a hat"
+  const hint = t.match(/^(?:in|as|with|without|but|and)\s+(.+?)[.!?]*$/i);
+  if (hint && t.length < 80) {
+    return `${lastPrompt}, ${t.toLowerCase()}`;
+  }
+
+  // Very short free-text refinement (< 80 chars, no question mark) —
+  // treat as additive modifier on the last prompt. Keeps the user in
+  // image mode without needing to re-type "image of …".
+  if (t.length < 80 && !/\?$/.test(t)) {
+    return `${lastPrompt}, ${t}`;
+  }
+
+  return null;
+}
+
 async function runImageTurn(prompt, opts) {
   busy = true;
   setSendMode('stop');
@@ -1590,6 +1745,11 @@ async function runImageTurn(prompt, opts) {
     });
     history.push({ role: 'assistant', content: '[image: ' + prompt + ']', imageUrl: dataUrl });
     if (activeChatObj) { activeChatObj.messages = history.slice(); saveState(); }
+    // Enter / renew sticky image mode. Next ~10 minutes of free-text
+    // messages route through the image path by default, so the user
+    // doesn't have to re-type /image after the first successful gen.
+    state._lastImagePrompt = prompt;
+    state._imageStickyUntil = Date.now() + 10 * 60 * 1000;
   } catch (e) {
     const frame = body.querySelector('.gen_image_frame');
     frame.classList.remove('loading');

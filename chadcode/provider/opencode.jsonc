@@ -1,0 +1,54 @@
+// ChadCode default configuration for OpenCode.
+//
+// Drop this into the user's ~/.config/opencode/opencode.jsonc (or the
+// equivalent for the host OS) — fork.sh handles that at build time.
+//
+// Design:
+//   - ONE provider: "chadgpt", pointed at https://chadgpt-964.pages.dev/v1
+//     (the OpenAI-compatible endpoint that fronts our chat workers). The
+//     fork intentionally hides every third-party provider — a user who
+//     pastes an OpenAI key still can't reach OpenAI through ChadCode.
+//   - Auth: the Authorization header gets the device's $CHADCODE_LICENSE.
+//     No other key is accepted.
+//   - Model list mirrors MODEL_CATALOG in pages/functions/_lib/tiers.js so
+//     the TUI only shows models the backend actually serves. Tiered:
+//     free (no-cost, always available), pro (Plus), ultra (Plus heavy).
+//   - Default model: chadgpt-fast. A free user never has to touch /model
+//     to start chatting.
+{
+  "$schema": "https://opencode.ai/config.json",
+  "theme": "chadcode",
+  "autoshare": false,
+  "autoupdate": false,
+
+  // Replace every other provider with the single ChadGPT one. Opencode
+  // treats "providers" as a merge target; set it exclusively here and
+  // the defaults disappear.
+  "provider": {
+    "chadgpt": {
+      "name": "ChadGPT",
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "baseURL": "https://chadgpt-964.pages.dev/v1",
+        "apiKey": "{env:CHADCODE_LICENSE}"
+      },
+      "models": {
+        // ---- free tier ----
+        "chadgpt-fast":   { "name": "ChadGPT Fast",   "cost": { "input": 0, "output": 0 }, "limit": { "context": 8192,  "output": 4096 }, "tool_call": true },
+        "chadgpt-small":  { "name": "ChadGPT Small",  "cost": { "input": 0, "output": 0 }, "limit": { "context": 8192,  "output": 4096 }, "tool_call": true },
+        "chadgpt-tiny":   { "name": "ChadGPT Tiny",   "cost": { "input": 0, "output": 0 }, "limit": { "context": 4096,  "output": 2048 }, "tool_call": true },
+        // ---- pro tier (Plus) ----
+        "chadgpt-pro":    { "name": "ChadGPT Pro (Llama 3 8B)", "cost": { "input": 0, "output": 0 }, "limit": { "context": 8192,  "output": 4096 }, "tool_call": true },
+        "chadgpt-coder":  { "name": "ChadCoder (DeepSeek 6.7B)", "cost": { "input": 0, "output": 0 }, "limit": { "context": 16384, "output": 8192 }, "tool_call": true },
+        // ---- ultra tier (Plus) ----
+        "chadgpt-ultra":  { "name": "ChadGPT Ultra (Llama 3.3 70B)", "cost": { "input": 0, "output": 0 }, "limit": { "context": 32768, "output": 8192 }, "tool_call": true }
+      }
+    }
+  },
+
+  // Default model for every new chat.
+  "model": "chadgpt/chadgpt-fast",
+
+  // Short-form command the TUI shows when a user runs /models.
+  "small_model": "chadgpt/chadgpt-small"
+}
