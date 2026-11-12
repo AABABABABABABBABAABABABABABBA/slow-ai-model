@@ -88,8 +88,10 @@ export async function onRequestPost({ request, env }) {
   }
   // Unlimited plan skips quota checks but still has cost tracked.
   const skipQuota = planSkipsQuota(user.plan);
-  if (tier !== 'free' && !skipQuota) {
-    const gate = await canUse(env, user.id, tier);
+  if (!skipQuota) {
+    // canUse now also enforces: per-tier daily/weekly/monthly REQUEST caps
+    // AND per-account daily/monthly TOKEN caps (any plan ≠ unlimited).
+    const gate = await canUse(env, user.id, tier, user.plan);
     if (!gate.ok) {
       return json({
         error: 'usage_limit_reached',
@@ -98,15 +100,31 @@ export async function onRequestPost({ request, env }) {
         limit: gate.limit,
         tier,
         resets_at: gate.resets_at,
-        detail: `${tier} ${gate.scope} limit reached (${gate.used}/${gate.limit}). Resets ${gate.resets_at}.`,
+        detail: `${gate.scope.startsWith('tokens') ? 'Account token' : tier + ' ' + gate.scope} limit reached (${gate.used}/${gate.limit}). Resets ${gate.resets_at}.`,
       }, { status: 429, headers: { 'Retry-After': String(Math.max(60, Math.floor((Date.parse(gate.resets_at) - Date.now()) / 1000))) } });
     }
+  }
+
+  // Concurrency limiter — cap simultaneous in-flight chat requests per user.
+  // Prevents 10 open tabs from each firing 3 parallel requests to exhaust
+  // worker CPU / Workers AI capacity. KV-backed counter with 60s TTL so a
+  // disconnected client's slot always frees itself.
+  const CONCURRENCY_CAP = user.plan === 'unlimited' ? 10 : user.plan === 'plus' ? 5 : 3;
+  const concKey = 'conc:' + user.id;
+  const concRelease = await acquireConcurrencySlot(env, concKey, CONCURRENCY_CAP);
+  if (!concRelease) {
+    return json({
+      error: 'too_many_concurrent_requests',
+      cap: CONCURRENCY_CAP,
+      detail: `You already have ${CONCURRENCY_CAP} requests in flight. Wait for one to finish before sending another.`,
+    }, { status: 429, headers: { 'Retry-After': '5' } });
   }
 
   // Record device fingerprint. If this device is blocked for bypass attempts,
   // deny the request regardless of plan.
   const fpCheck = await recordFingerprint(env, user.id, request, body.fingerprint);
   if (fpCheck.blocked) {
+    await concRelease();
     return forbidden('device blocked for bypass attempts');
   }
 
@@ -140,9 +158,10 @@ export async function onRequestPost({ request, env }) {
   // would need to parse the stream, which breaks our pass-through.
   const estInputTokens = estimateTokensFromMessages(body.messages || []);
   const estOutputTokens = 400; // flat estimate per call
-  if (tier !== 'free' || skipQuota) {
-    await recordUsage(env, user.id, finalModelKey, tier, estInputTokens + estOutputTokens);
-  }
+  // Always record — free tier still counts toward per-account TOKEN
+  // ceilings and feeds the founder's cost dashboard. Unlimited plan
+  // records for cost tracking only (quota check was skipped above).
+  await recordUsage(env, user.id, finalModelKey, tier, estInputTokens + estOutputTokens);
 
   const workerToken = await mintWorkerToken(env, request, user.id);
   const upstream = await fetch(targetUrl + '/chat', {
@@ -170,7 +189,39 @@ export async function onRequestPost({ request, env }) {
   headers.set('Access-Control-Allow-Origin', env.PAGES_ORIGIN || new URL(request.url).origin);
   // Mark enrichment inside-workers for telemetry? No — keep devtools clean.
   void enrichmentTag; void routedTo;
-  return new Response(upstream.body, { status: upstream.status, headers });
+
+  // Tee the upstream body so we can release the concurrency slot when the
+  // stream actually finishes (not just when the headers come back). If the
+  // client disconnects early the KV key's 60s TTL mops up anyway.
+  const [passthrough, watcher] = upstream.body.tee();
+  (async () => {
+    try {
+      const r = watcher.getReader();
+      while (true) { const { done } = await r.read(); if (done) break; }
+    } catch {}
+    try { await concRelease(); } catch {}
+  })();
+
+  return new Response(passthrough, { status: upstream.status, headers });
+}
+
+// ---- Concurrency limiter -----------------------------------------------
+// Backed by SESSIONS KV (same binding used for rate-limit buckets). Not
+// perfectly atomic but good enough — a race lets at most ~cap+1 requests
+// slip through, which is fine for the purpose.
+async function acquireConcurrencySlot(env, key, cap) {
+  if (!env.SESSIONS) return async () => {};   // KV not bound — no limiter
+  let count = 0;
+  try { count = Number((await env.SESSIONS.get(key)) || 0); } catch {}
+  if (count >= cap) return null;
+  try { await env.SESSIONS.put(key, String(count + 1), { expirationTtl: 60 }); } catch {}
+  return async () => {
+    try {
+      let n = Number((await env.SESSIONS.get(key)) || 0) - 1;
+      if (n <= 0) await env.SESSIONS.delete(key);
+      else await env.SESSIONS.put(key, String(n), { expirationTtl: 60 });
+    } catch {}
+  };
 }
 
 // ~4 chars per token for llama-family tokenizers; close enough for cost math.

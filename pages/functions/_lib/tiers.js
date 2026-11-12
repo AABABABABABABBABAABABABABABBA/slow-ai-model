@@ -24,11 +24,19 @@ export const MODEL_CATALOG = {
   'qwen-coder':   { tier: 'ultra', worker: 'chat', displayName: 'Qwen2.5 Coder 32B',  modelName: 'Qwen 2.5 Coder 32B' },
 };
 
-// Daily and weekly caps per tier. Mirrors the shape of Claude's plan limits.
+// Daily, weekly, and monthly caps per tier (requests).
+// Per-account TOKEN caps separate — those apply across ALL tiers.
 export const LIMITS = {
-  free:  { daily: Infinity, weekly: Infinity },
-  pro:   { daily: 50,  weekly: 300 },
-  ultra: { daily: 15,  weekly: 75 },
+  free:  { daily: 200,  weekly: 1000, monthly: 3000  },
+  pro:   { daily: 50,   weekly: 300,  monthly: 1000  },
+  ultra: { daily: 15,   weekly: 75,   monthly: 250   },
+};
+
+// Hard per-account token ceilings. Apply to EVERY plan except 'unlimited'.
+// Counted across all tiers (sum of tokens field in usage_log).
+export const ACCOUNT_TOKEN_LIMITS = {
+  free:  { daily: 100_000,   monthly: 1_500_000  },
+  plus:  { daily: 1_000_000, monthly: 20_000_000 },
 };
 
 // Approximate cost per model in micro-USD per 1k tokens output.
@@ -83,7 +91,11 @@ export function dayKey(date = new Date()) {
   return date.toISOString().slice(0, 10);
 }
 
-// When the next daily/weekly window opens, as epoch ms.
+export function monthKey(date = new Date()) {
+  return date.toISOString().slice(0, 7);    // 'YYYY-MM' (UTC)
+}
+
+// When the next daily/weekly/monthly window opens, as epoch ms.
 export function nextDailyResetMs(now = Date.now()) {
   const d = new Date(now);
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1, 0, 0, 0);
@@ -93,6 +105,10 @@ export function nextWeeklyResetMs(now = Date.now()) {
   const dayNum = d.getUTCDay() || 7;        // Mon=1..Sun=7
   const daysUntilMonday = ((8 - dayNum) % 7) || 7;
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + daysUntilMonday, 0, 0, 0);
+}
+export function nextMonthlyResetMs(now = Date.now()) {
+  const d = new Date(now);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1, 0, 0, 0);
 }
 
 // Does this user's plan allow this tier at all? (ignores quota)

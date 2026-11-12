@@ -19,3 +19,10 @@ PAGES_ORIGIN = "https://chadgpt-964.pages.dev"
 binding = "DB"
 database_name = "chadgpt-users"
 database_id = "e0166cbb-1e40-45b1-986b-b865321506df"
+
+# Shared with the workers. Used by Pages Functions for the per-user
+# concurrency limiter (conc:<user_id> keys) and could be used for Pages-
+# side rate buckets later.
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "1b4345bdcf7248bd89be72d520af37f5"
