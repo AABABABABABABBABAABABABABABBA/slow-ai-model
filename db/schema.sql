@@ -38,11 +38,13 @@ CREATE TABLE IF NOT EXISTS containers (
   id TEXT PRIMARY KEY,                    -- ctr_<12 hex>
   user_id INTEGER NOT NULL,
   image TEXT NOT NULL DEFAULT 'chadgpt/runner:3.11-node20-alpine',
-  cpu INTEGER NOT NULL DEFAULT 2,
+  cpu INTEGER NOT NULL DEFAULT 2,         -- rounded-up vCPU (deprecated; see cpu_milli)
+  cpu_milli INTEGER,                      -- authoritative CPU allocation in millicpu (100 = 0.1 vCPU)
   memory_mb INTEGER NOT NULL DEFAULT 1024,
   disk_mb INTEGER NOT NULL DEFAULT 4096,
   region TEXT,
   status TEXT NOT NULL DEFAULT 'running',  -- 'running' | 'stopped'
+  plan TEXT,                              -- 'free' | 'plus' | 'unlimited' at provision time
   created_at INTEGER NOT NULL,
   last_seen_at INTEGER NOT NULL,
   stopped_at INTEGER,

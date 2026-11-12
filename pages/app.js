@@ -376,6 +376,7 @@ const chatListEl = document.getElementById('chat_list');
 const containerBtn = document.getElementById('container_badge');
 const edgePingEl = document.getElementById('edge_ping');
 const containerUptimeEl = document.getElementById('container_uptime');
+const containerLabelEl = document.getElementById('container_label');
 
 // ---------- theme -----------------------
 function applyTheme() {
@@ -439,6 +440,7 @@ async function restartContainer() {
 setInterval(() => {
   if (!containerStartedAt) { containerUptimeEl.textContent = '--:--'; return; }
   containerUptimeEl.textContent = fmtUptime(Date.now() - containerStartedAt);
+  if (containerLabelEl && containerState?.name) containerLabelEl.textContent = containerState.name;
 }, 1000);
 containerBtn.addEventListener('click', openContainerModal);
 
@@ -2375,15 +2377,18 @@ function openContainerModal() {
       const c = containerState;
       const up = fmtUptime(Date.now() - c.created_at);
       const statusColor = c.status === 'running' ? 'var(--ok)' : 'var(--muted)';
+      const vcpu = c.cpu_vcpu ?? c.cpu ?? 0;
+      const planBadge = c.plan ? `<span style="background:${c.plan === 'unlimited' ? '#9b6bd8' : c.plan === 'plus' ? '#2e7d32' : '#555'};color:#fff;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;letter-spacing:.05em;margin-left:6px">${c.plan.toUpperCase()}</span>` : '';
       p.innerHTML = `
         <div class="stats_grid">
-          <div class="stat_card"><div class="stat_label">Session</div><div class="stat_value" style="font-size:14px;overflow-wrap:break-word">${c.id}</div></div>
+          <div class="stat_card"><div class="stat_label">Session</div><div class="stat_value" style="font-size:14px;overflow-wrap:break-word">${c.name || c.id}${planBadge}</div></div>
           <div class="stat_card"><div class="stat_label">Status</div><div class="stat_value" style="color:${statusColor}">${c.status.toUpperCase()}</div></div>
           <div class="stat_card"><div class="stat_label">Uptime</div><div class="stat_value">${up}</div></div>
           <div class="stat_card"><div class="stat_label">Region</div><div class="stat_value" style="font-size:14px">${c.region || '?'}</div></div>
-          <div class="stat_card"><div class="stat_label">CPU · RAM</div><div class="stat_value" style="font-size:14px">${c.cpu} vCPU · ${c.memory_mb}MB</div></div>
+          <div class="stat_card"><div class="stat_label">CPU · RAM</div><div class="stat_value" style="font-size:14px">${vcpu} vCPU · ${c.memory_mb}MB</div></div>
           <div class="stat_card"><div class="stat_label">Disk</div><div class="stat_value" style="font-size:14px">${c.disk_mb}MB</div></div>
         </div>
+        ${c.tier_label ? `<div style="margin-top:10px;font-size:12px;color:var(--muted);font-family:var(--mono)">${c.tier_label}</div>` : ''}
         <div style="margin-top:14px">
           <div class="setting_row">
             <div><div class="setting_label">Image</div></div>

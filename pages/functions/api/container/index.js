@@ -9,7 +9,7 @@ async function handle(request, env) {
   if (!env.DB) return json({ error: 'database not configured' }, { status: 500 });
   const region = request.cf?.colo || null;
   try {
-    const row = await ensureRunning(env, user.id, region);
+    const row = await ensureRunning(env, user.id, region, user.plan);
     return json({ container: toResponse(row, region) });
   } catch (err) {
     return json({ error: 'container failed', detail: err?.message || String(err) }, { status: 500 });

@@ -12,7 +12,7 @@ export async function onRequestPost({ request, env }) {
     await env.DB.prepare(
       'UPDATE containers SET status = ?, stopped_at = ?, last_seen_at = ? WHERE user_id = ? AND status = ?'
     ).bind('stopped', now, now, user.id, 'running').run();
-    const row = await ensureRunning(env, user.id, region);
+    const row = await ensureRunning(env, user.id, region, user.plan);
     return json({ container: toResponse(row, region), restarted: true });
   } catch (err) {
     return json({ error: 'restart failed', detail: err?.message || String(err) }, { status: 500 });
