@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Send, Square, ChevronDown, Menu, Settings as SettingsIcon } from 'lucide-react';
+import { Send, Square, ChevronDown, Menu, Settings as SettingsIcon, Gauge } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { store, useStore, type Chat } from '@/lib/store';
@@ -7,7 +7,7 @@ import { MODELS, modelById } from '@/lib/models';
 import { streamChat, type User } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
-export function ChatView({ user, onOpenSidebar, onOpenSettings }: { user: User; onOpenSidebar: () => void; onOpenSettings: () => void }) {
+export function ChatView({ user, onOpenSidebar, onOpenSettings, onOpenUsage }: { user: User; onOpenSidebar: () => void; onOpenSettings: () => void; onOpenUsage: () => void }) {
   const activeId = useStore(s => s.activeChatId);
   const chats = useStore(s => s.chats);
   const modelId = useStore(s => s.model);
@@ -145,9 +145,14 @@ export function ChatView({ user, onOpenSidebar, onOpenSettings }: { user: User; 
             )}
           </div>
         </div>
-        <Button variant="ghost" size="icon" onClick={onOpenSettings}>
-          <SettingsIcon className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center gap-1 shrink-0">
+          <Button variant="ghost" size="icon" onClick={onOpenUsage} title="Usage">
+            <Gauge className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon" onClick={onOpenSettings} title="Settings">
+            <SettingsIcon className="h-4 w-4" />
+          </Button>
+        </div>
       </header>
 
       {/* Messages */}

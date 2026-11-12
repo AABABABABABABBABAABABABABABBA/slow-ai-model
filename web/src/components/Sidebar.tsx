@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { MessageSquarePlus, Search, Archive, Trash2, MoreHorizontal, ChevronRight } from 'lucide-react';
+import { MessageSquarePlus, Search, Archive, Trash2, MoreHorizontal, ChevronRight, Cloud } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
@@ -20,7 +20,7 @@ function groupByAge(chats: Chat[]) {
   return g;
 }
 
-export function Sidebar({ onClose }: { onClose?: () => void }) {
+export function Sidebar({ onClose, onOpenDeploys }: { onClose?: () => void; onOpenDeploys?: () => void }) {
   const chats = useStore(s => s.chats);
   const active = useStore(s => s.activeChatId);
   const [q, setQ] = useState('');
@@ -155,6 +155,19 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           </>
         )}
       </div>
+      {onOpenDeploys && (
+        <>
+          <Separator />
+          <button
+            className="flex items-center gap-2 px-4 py-3 text-sm hover:bg-accent/60 text-left pb-safe"
+            onClick={() => { onOpenDeploys(); onClose?.(); }}
+          >
+            <Cloud className="h-4 w-4 text-primary" />
+            <span className="flex-1">My deployments</span>
+            <span className="text-xs text-muted-foreground">Plus</span>
+          </button>
+        </>
+      )}
     </aside>
   );
 }
