@@ -22,10 +22,11 @@ export interface BannerInfo {
 }
 
 const LETTERS = [
-  // chadcode — figlet 'small' typeface, hand-tuned for even stroke width.
-  ' ┌─┐┬ ┬┌─┐┌┬┐┌─┐┌─┐┌┬┐┌─┐',
-  ' │  ├─┤├─┤ │││  │ │ ││├┤ ',
-  ' └─┘┴ ┴┴ ┴─┴┘└─┘└─┘─┴┘└─┘',
+  // CHADCODE — thick block style using half-blocks so it reads bold in any
+  // terminal font. 3 rows, 8 letter cells, uniform width.
+  '  █▀▀ █ █ █▀█ █▀▄ █▀▀ █▀█ █▀▄ █▀▀',
+  '  █   █▀█ █▀█ █ █ █   █ █ █ █ █▀▀',
+  '  ▀▀▀ ▀ ▀ ▀ ▀ ▀▀  ▀▀▀ ▀▀▀ ▀▀  ▀▀▀',
 ];
 
 // Six-step purple→magenta gradient for ANSI 24-bit terminals.
@@ -75,8 +76,10 @@ export function banner(info: BannerInfo = {}): string {
   const em = info.email  || '';
   const cwd = info.cwd   || '';
 
-  // One-liner fallback for very narrow terminals.
-  if (cols < 44) {
+  // One-liner fallback for terminals too narrow for the block art.
+  // The 3-row banner is 34 cols wide; add a 20-col info panel and leave
+  // a small gutter so anything under ~56 drops to the compact form.
+  if (cols < 56) {
     return `${bold('ChadCode')} ${dim('v' + v)}  ${m}  ${md}\n`;
   }
 

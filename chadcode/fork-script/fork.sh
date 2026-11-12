@@ -200,6 +200,29 @@ if [[ -d "$TUI_SRC" ]]; then
   else
     tar -C "$TUI_SRC" --exclude='node_modules' --exclude='dist' -cf - . | tar -C packages/tui-commands -xf -
   fi
+
+  # Best-effort replacement of OpenCode's built-in banner anywhere it's
+  # hardcoded. We look for files that mention `OPENCODE` in a banner-y
+  # context (blocky unicode OR the literal string in a Go/TS file) and
+  # patch them. Finding nothing is fine — the opencode source changes
+  # over time and a quiet miss is better than a loud false-positive.
+  echo "[5d] swap any hardcoded opencode banner for the ChadCode block art"
+  BANNER_CHAR='▀'
+  BANNER_FILES=$(grep -rlE "${BANNER_CHAR}" --include='*.go' --include='*.ts' --include='*.tsx' --include='*.js' . 2>/dev/null || true)
+  for f in $BANNER_FILES; do
+    # If this file has two or more rows of block-art characters within
+    # 10 lines of each other, assume it's a banner and rewrite the
+    # whole block to the ChadCode variant. Keep it simple with perl.
+    if perl -0777 -ne 'exit 1 unless /(?:[█▀▄].*\n){2,}/' "$f" 2>/dev/null; then
+      perl -0777 -i -pe '
+        s{((?:[^\n]*[█▀▄][^\n]*\n){3,10})}{
+          "  █▀▀ █ █ █▀█ █▀▄ █▀▀ █▀█ █▀▄ █▀▀\n" .
+          "  █   █▀█ █▀█ █ █ █   █ █ █ █ █▀▀\n" .
+          "  ▀▀▀ ▀ ▀ ▀ ▀ ▀▀  ▀▀▀ ▀▀▀ ▀▀  ▀▀▀\n"
+        }e
+      ' "$f" && echo "   -> patched banner in $f"
+    fi
+  done
 fi
 
 PROMPT_SRC_DIR="$(cd "$(dirname "$0")/.." && pwd)/prompts"
