@@ -171,9 +171,10 @@ if [[ -d "$TOOLS_SRC" ]]; then
       j.dependencies["@chadcode/tools"] = "workspace:*";
       j.dependencies["@chadcode/license"] = j.dependencies["@chadcode/license"] || "workspace:*";
       j.dependencies["@chadcode/auth-client"] = "workspace:*";
+      j.dependencies["@chadcode/tui-commands"] = "workspace:*";
       fs.writeFileSync(p, JSON.stringify(j,null,2)+"\n");
     '
-    echo "  -> added @chadcode/tools and @chadcode/auth-client as workspace deps of packages/cli"
+    echo "  -> added @chadcode/tools, auth-client, tui-commands as workspace deps of packages/cli"
   fi
 fi
 
@@ -186,6 +187,18 @@ if [[ -d "$AUTH_SRC" ]]; then
     rsync -a --exclude='node_modules' --exclude='dist' "$AUTH_SRC"/ packages/auth-client/
   else
     tar -C "$AUTH_SRC" --exclude='node_modules' --exclude='dist' -cf - . | tar -C packages/auth-client -xf -
+  fi
+fi
+
+# Copy the @chadcode/tui-commands package (slash commands + banner).
+TUI_SRC="$(cd "$(dirname "$0")/.." && pwd)/tui-commands"
+if [[ -d "$TUI_SRC" ]]; then
+  echo "[5c] copy @chadcode/tui-commands into packages/tui-commands"
+  mkdir -p packages/tui-commands
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -a --exclude='node_modules' --exclude='dist' "$TUI_SRC"/ packages/tui-commands/
+  else
+    tar -C "$TUI_SRC" --exclude='node_modules' --exclude='dist' -cf - . | tar -C packages/tui-commands -xf -
   fi
 fi
 
