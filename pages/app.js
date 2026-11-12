@@ -1007,6 +1007,30 @@ async function runChatTurn(userText, attachments, opts) {
     .map(h => ({ role: h.role === 'assistant' ? 'assistant' : 'user', content: (h.role === 'user' ? (h === history[history.length - 1] ? finalUserText : h.content) : h.content) }))
     .filter(h => h.content);
 
+  // Free-plan queue. Pings /api/queue/ticket first — server returns the
+  // user's position in the free queue and holds the connection open for the
+  // waited duration. Plus / unlimited skip this entirely (server short-
+  // circuits). Shows a live "You're #N in queue" status on the bot bubble.
+  let queueStatus = null;
+  if (state.plan === 'free') {
+    queueStatus = document.createElement('div');
+    queueStatus.className = 'queue_status';
+    queueStatus.style.cssText = 'font-size:13px;color:var(--muted);font-style:italic;display:flex;align-items:center;gap:8px';
+    queueStatus.innerHTML = '<span class="queue_spin" style="width:12px;height:12px;border-radius:50%;border:2px solid rgba(255,255,255,0.15);border-top-color:var(--accent);animation:spin 0.9s linear infinite;display:inline-block"></span><span>Joining queue…</span>';
+    body.innerHTML = '';
+    body.appendChild(queueStatus);
+    try {
+      const qRes = await apiFetch('/queue/ticket', { method: 'POST', body: '{}', signal: currentAbort.signal });
+      const qJson = await qRes.json().catch(() => ({}));
+      if (qJson.queued && qJson.position) {
+        queueStatus.querySelector('span:last-child').textContent = `You were #${qJson.position} in queue — now answering…`;
+      }
+    } catch (e) {
+      if (e?.name === 'AbortError') { busy = false; setSendMode('send'); return; }
+      // Queue failure isn't fatal — proceed to chat.
+    }
+  }
+
   let accumulated = '';
   let errText = null;
   let routeInfo = null;
@@ -2475,7 +2499,16 @@ renderChatMeter();
     saveState();
     renderUsageBadge();
     edgePingEl.textContent = 'edge · ' + me.email.split('@')[0];
-    // Pull server-managed container state
+
+    // Reveal Owner panel in the sidebar if the server confirms founder.
+    // The href still points at /owner, which re-checks server-side before
+    // rendering anything — this toggle is purely a UX affordance, never
+    // the trust boundary.
+    if (me.is_founder) {
+      const el = document.getElementById('sb_owner');
+      if (el) el.hidden = false;
+    }
+
     await fetchContainer();
   } catch (e) {
     toast({ title: 'Could not reach backend: ' + (e.message || e) }, 6000, 'err');

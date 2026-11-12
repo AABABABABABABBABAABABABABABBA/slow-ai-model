@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Owner panel — ChadGPT</title>
+<meta name="theme-color" content="#0e0f13">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/icons/favicon-32.png">
+<style>
+  :root { color-scheme: dark; --fg:#e6e6e6; --muted:#8f8f98; --bg:#0e0f13; --card:#171922; --border:#262a35; --accent:#8a4fd1; --ok:#2e7d32; --danger:#b23c3c; --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif; line-height: 1.5; -webkit-text-size-adjust: 100%; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 20px 64px; padding-top: calc(24px + env(safe-area-inset-top, 0px)); }
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 20px; }
+  .logo { display:inline-flex; width:42px; height:42px; border-radius:11px; background: linear-gradient(135deg, #4e2a8e, #8a4fd1); align-items:center; justify-content:center; color:#fff; font-size:20px; font-weight:800; }
+  h1 { margin: 0; font-size: 22px; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); font-size: 13px; }
+  a.back { color: var(--muted); text-decoration: none; font-size: 13px; }
+  a.back:hover { color: var(--fg); }
+
+  .gate_card { max-width: 440px; margin: 10vh auto; background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 24px; text-align: center; }
+  .spin { width: 24px; height: 24px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.15); border-top-color: var(--accent); margin: 10px auto; animation: spin 0.9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .tabs { display: inline-flex; gap: 2px; padding: 3px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 14px; }
+  .tabs button { background: transparent; border: none; color: var(--muted); padding: 7px 14px; border-radius: 7px; font-family: inherit; font-size: 13px; cursor: pointer; }
+  .tabs button.active { background: var(--border); color: var(--fg); }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 18px; }
+  .stat { padding: 12px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
+  .stat .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .stat .val { font-size: 20px; font-weight: 700; font-family: var(--mono); margin-top: 2px; }
+
+  table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  th { text-align: left; padding: 10px 12px; font-size: 11px; text-transform: uppercase; color: var(--muted); background: #1f2330; letter-spacing: 0.04em; }
+  td { padding: 10px 12px; font-size: 13px; border-top: 1px solid var(--border); }
+  tr.banned { opacity: 0.55; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; letter-spacing: 0.04em; margin-left: 4px; }
+  .badge.banned { background: var(--danger); color: #fff; }
+  .badge.muted { background: #c47a0f; color: #fff; }
+  .badge.plan-free { background: #333; color: #ccc; }
+  .badge.plan-plus { background: #2e7d32; color: #fff; }
+  .badge.plan-unlimited { background: #9b6bd8; color: #fff; }
+
+  button.btn { background: linear-gradient(135deg, #4e2a8e, #8a4fd1); color: #fff; border: none; border-radius: 7px; padding: 6px 12px; font-weight: 600; font-size: 12px; cursor: pointer; font-family: inherit; }
+  button.btn.ghost { background: transparent; color: var(--fg); border: 1px solid var(--border); }
+  button.btn.danger { background: var(--danger); }
+  .right { text-align: right; }
+
+  .sheet { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .sheet_card { max-width: 480px; width: 100%; max-height: 85vh; overflow: auto; background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; }
+  .row { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+  .lbl2 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin: 10px 0 4px; }
+  textarea { width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg); color: var(--fg); font-family: inherit; font-size: 13px; resize: vertical; }
+
+  .section { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+  .section h3 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+  .fp_row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 12px; gap: 10px; }
+  .fp_row:last-child { border-bottom: none; }
+  code { font-family: var(--mono); background: var(--bg); padding: 1px 6px; border-radius: 4px; font-size: 11.5px; }
+</style>
+</head>
+<body>
+<div id="gate" class="gate_card">
+  <div class="logo" style="margin: 0 auto 10px">C</div>
+  <h1>Owner panel</h1>
+  <p class="sub" id="gate_msg">Verifying…</p>
+  <div class="spin" id="gate_spin"></div>
+</div>
+
+<main id="app" hidden>
+  <div class="top">
+    <div style="display:flex;align-items:center;gap:12px;min-width:0">
+      <div class="logo">C</div>
+      <div style="min-width:0">
+        <h1>Owner panel</h1>
+        <div class="sub" id="who">signed in</div>
+      </div>
+    </div>
+    <a class="back" href="/">← back to chat</a>
+  </div>
+
+  <div class="tabs">
+    <button data-tab="users" class="active">Users</button>
+    <button data-tab="bypass">Bypass watch</button>
+    <button data-tab="ratings">Ratings</button>
+  </div>
+
+  <div id="pane"></div>
+</main>
+
+<div id="sheet_slot"></div>
+
+
+<script src="/owner.js" defer></script>
+</body>
+</html>

@@ -241,6 +241,7 @@ header {
 .edge_badge .ping { color: var(--ok); font-weight: 600; }
 .container_badge .cuptime { color: var(--muted); font-size: 11px; }
 @keyframes breathe { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 .usage_badge {
   display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px;
