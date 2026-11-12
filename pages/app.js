@@ -196,6 +196,16 @@ function showAuthGate(initialMode = 'login') {
     try {
       if (mode === 'signup') await doSignup(email, password);
       else await doLogin(email, password);
+      // Honor ?return=<path> — the cli-auth page sends people here when they
+      // need to sign in, and expects to get them back at a specific URL.
+      // Same-origin only: never follow a redirect pointing off this site.
+      try {
+        const ret = new URLSearchParams(location.search).get('return');
+        if (ret && ret.startsWith('/') && !ret.startsWith('//')) {
+          location.replace(ret);
+          return;
+        }
+      } catch {}
       gate.remove();
       document.body.classList.remove('authed-off');
       state.plan = currentUser.plan || 'free';

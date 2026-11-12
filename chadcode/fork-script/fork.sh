@@ -170,9 +170,22 @@ if [[ -d "$TOOLS_SRC" ]]; then
       j.dependencies = j.dependencies || {};
       j.dependencies["@chadcode/tools"] = "workspace:*";
       j.dependencies["@chadcode/license"] = j.dependencies["@chadcode/license"] || "workspace:*";
+      j.dependencies["@chadcode/auth-client"] = "workspace:*";
       fs.writeFileSync(p, JSON.stringify(j,null,2)+"\n");
     '
-    echo "  -> added @chadcode/tools as a workspace dep of packages/cli"
+    echo "  -> added @chadcode/tools and @chadcode/auth-client as workspace deps of packages/cli"
+  fi
+fi
+
+# Copy the @chadcode/auth-client package (device-code login flow).
+AUTH_SRC="$(cd "$(dirname "$0")/.." && pwd)/auth-client"
+if [[ -d "$AUTH_SRC" ]]; then
+  echo "[5b] copy @chadcode/auth-client into packages/auth-client"
+  mkdir -p packages/auth-client
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -a --exclude='node_modules' --exclude='dist' "$AUTH_SRC"/ packages/auth-client/
+  else
+    tar -C "$AUTH_SRC" --exclude='node_modules' --exclude='dist' -cf - . | tar -C packages/auth-client -xf -
   fi
 fi
 

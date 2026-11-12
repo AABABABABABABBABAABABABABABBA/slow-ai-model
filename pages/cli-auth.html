@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ChadCode — Sign in</title>
+<meta name="theme-color" content="#0e0f13">
+<link rel="icon" href="/icons/favicon-32.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    color-scheme: dark;
+    --fg:#e6e6e6; --muted:#8f8f98; --bg:#0e0f13; --card:#171922; --border:#262a35;
+    --accent:#8a4fd1; --accent2:#4e2a8e; --ok:#2e7d32; --err:#e06666;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font-family: var(--sans); line-height: 1.5; -webkit-text-size-adjust: 100%; }
+  main { max-width: 500px; margin: 0 auto; padding: 48px 20px 64px; padding-top: calc(48px + env(safe-area-inset-top, 0px)); }
+  .logo { display: inline-flex; width: 56px; height: 56px; border-radius: 14px; background: linear-gradient(135deg, var(--accent2), var(--accent)); align-items: center; justify-content: center; color: #fff; font-size: 28px; font-weight: 800; margin-bottom: 16px; }
+  h1 { margin: 0 0 6px; font-size: 28px; letter-spacing: -0.02em; font-weight: 700; }
+  .sub { color: var(--muted); margin: 0 0 24px; font-size: 14px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; margin-bottom: 14px; }
+  .code_input { width: 100%; box-sizing: border-box; padding: 14px 16px; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 10px; font-family: var(--mono); font-size: 22px; letter-spacing: 0.15em; text-align: center; text-transform: uppercase; outline: none; }
+  .code_input:focus { border-color: var(--accent2); box-shadow: 0 0 0 3px #4e2a8e44; }
+  button, .btn { background: linear-gradient(135deg, var(--accent2), var(--accent)); color: #fff; border: none; border-radius: 10px; padding: 12px 20px; font-weight: 600; font-size: 15px; cursor: pointer; font-family: inherit; width: 100%; box-sizing: border-box; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .ghost { background: transparent; color: var(--fg); border: 1px solid var(--border); }
+  .meta { font-size: 12.5px; color: var(--muted); display: flex; justify-content: space-between; margin-top: 10px; font-family: var(--mono); }
+  .err { color: var(--err); padding: 10px 14px; background: #e0666622; border: 1px solid #e0666688; border-radius: 8px; font-size: 13px; margin-top: 10px; }
+  .ok  { color: #8bd38f; padding: 10px 14px; background: #2e7d3222; border: 1px solid #2e7d3288; border-radius: 8px; font-size: 13px; margin-top: 10px; }
+  .spin { display: inline-block; width: 14px; height: 14px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: -2px; margin-right: 6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  a { color: #b58cff; }
+  code { background: var(--bg); padding: 2px 6px; border-radius: 4px; font-family: var(--mono); font-size: 12px; border: 1px solid var(--border); }
+  .step { font-size: 12px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 6px; font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+  <div class="logo">C</div>
+  <h1>Sign in to ChadCode</h1>
+  <p class="sub" id="sub_line">Pair your terminal with your account.</p>
+
+  <div class="card" id="code_card">
+    <div class="step">Step 1</div>
+    <label for="code" style="display:block; margin-bottom:10px; font-size:14px;">Enter the code from your terminal</label>
+    <input id="code" class="code_input" placeholder="ABCD-EFGH" maxlength="9" autocomplete="off" autocapitalize="characters" spellcheck="false">
+    <div class="meta"><span>8 characters, no vowels</span><span id="code_help">waiting for input</span></div>
+    <div id="code_err"></div>
+  </div>
+
+  <div class="card" id="action_card" style="display:none">
+    <div class="step" id="action_step">Step 2</div>
+    <div id="action_body"></div>
+  </div>
+
+  <p style="color:var(--muted); font-size:12.5px; text-align:center; margin-top:20px">
+    Not what you expected? <a href="/">Go back</a>
+  </p>
+</main>
+<script type="module" src="/cli-auth.js"></script>
+</body>
+</html>

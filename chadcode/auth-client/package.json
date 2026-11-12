@@ -1,0 +1,21 @@
+{
+  "name": "@chadcode/auth-client",
+  "version": "0.1.0",
+  "description": "Client half of the ChadCode device-code login flow — mint a code, print it, poll until approved.",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.6.0"
+  },
+  "engines": { "node": ">=20" }
+}
